@@ -1,20 +1,18 @@
-
-
-
-
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
 const path = require("path");
 
 const {
+  initDatabase,
   createAccount,
   getAccount,
   transfer,
   createDeposit,
   verifyDeposit,
   createPaymentRequest,
-  completePayment
+  getPaymentRequest,
+  completePayment,
+  getTransactions
 } = require("./ledger");
 
 const {
@@ -24,127 +22,226 @@ const {
 
 const app = express();
 
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
-// Serve the website from /public
-app.use(express.static(path.join(__dirname, "public")));
 
-// ==============================
-// API KEY AUTHENTICATION
-// ==============================
+// ========================================
+// WEBSITE
+// ========================================
 
-function requireApiKey(req, res, next) {
-  const apiKey = req.headers["x-api-key"];
-
-  const auth = authenticateApiKey(apiKey);
-
-  if (!auth) {
-    return res.status(401).json({
-      error: "Invalid or missing API key"
-    });
-  }
-
-  req.auth = auth;
-
-  next();
-}
-
-// ==============================
-// BOOTSTRAP SECRET
-// ==============================
-
-function requireBootstrapSecret(req, res, next) {
-  const secret = req.headers["x-bootstrap-secret"];
-
-  if (!process.env.BOOTSTRAP_SECRET) {
-    return res.status(500).json({
-      error: "Bootstrap secret is not configured"
-    });
-  }
-
-  if (secret !== process.env.BOOTSTRAP_SECRET) {
-    return res.status(401).json({
-      error: "Invalid bootstrap secret"
-    });
-  }
-
-  next();
-}
-
-// ==============================
-// HOME / WEBSITE
-// ==============================
+app.use(
+  express.static(
+    path.join(__dirname, "public")
+  )
+);
 
 app.get("/", (req, res) => {
   res.sendFile(
-    path.join(__dirname, "public", "index.html")
+    path.join(
+      __dirname,
+      "public",
+      "index.html"
+    )
   );
 });
 
-// ==============================
+
+// ========================================
+// API KEY AUTHENTICATION
+// ========================================
+
+async function requireApiKey(req, res, next) {
+  try {
+    const apiKey =
+      req.headers["x-api-key"];
+
+    const auth =
+      await authenticateApiKey(apiKey);
+
+    if (!auth) {
+      return res.status(401).json({
+        error: "Invalid or missing API key"
+      });
+    }
+
+    req.auth = auth;
+    next();
+
+  } catch (error) {
+    console.error(
+      "API KEY AUTH ERROR:",
+      error
+    );
+
+    res.status(500).json({
+      error: error.message
+    });
+  }
+}
+
+
+// ========================================
+// BOOTSTRAP SECRET
+// ========================================
+
+function requireBootstrapSecret(req, res, next) {
+  const secret =
+    req.headers["x-bootstrap-secret"];
+
+  if (!process.env.BOOTSTRAP_SECRET) {
+    return res.status(500).json({
+      error:
+        "Bootstrap secret is not configured"
+    });
+  }
+
+  if (
+    secret !==
+    process.env.BOOTSTRAP_SECRET
+  ) {
+    return res.status(401).json({
+      error:
+        "Invalid bootstrap secret"
+    });
+  }
+
+  next();
+}
+
+
+// ========================================
 // API STATUS
-// ==============================
+// ========================================
 
 app.get("/api", (req, res) => {
   res.json({
     name: "My Payment Company API",
     status: "online",
-    environment: "production"
+    environment:
+      process.env.NODE_ENV ||
+      "production",
+    database:
+      process.env.DATABASE_URL
+        ? "PostgreSQL"
+        : "Not configured"
   });
 });
 
-// ==============================
+
+// ========================================
 // CREATE ACCOUNT
-// ==============================
+// ========================================
 
-app.post("/accounts", (req, res) => {
-  try {
-    const { owner } = req.body;
+app.post(
+  "/accounts",
+  async (req, res) => {
+    try {
+      const { owner } =
+        req.body;
 
-    if (!owner) {
-      return res.status(400).json({
-        error: "Owner is required"
+      if (!owner) {
+        return res.status(400).json({
+          error:
+            "Owner is required"
+        });
+      }
+
+      const account =
+        await createAccount(owner);
+
+      return res.status(201).json(
+        account
+      );
+
+    } catch (error) {
+      console.error(
+        "CREATE ACCOUNT ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        error: error.message
       });
     }
-
-    res.status(201).json(
-      createAccount(owner)
-    );
-
-  } catch (error) {
-    res.status(500).json({
-      error: error.message
-    });
   }
-});
+);
 
-// ==============================
+
+// ========================================
+// GET ACCOUNT
+// ========================================
+
+app.get(
+  "/accounts/:id",
+  async (req, res) => {
+    try {
+      const account =
+        await getAccount(
+          req.params.id
+        );
+
+      if (!account) {
+        return res.status(404).json({
+          error:
+            "Account not found"
+        });
+      }
+
+      return res.json(account);
+
+    } catch (error) {
+      console.error(
+        "GET ACCOUNT ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        error: error.message
+      });
+    }
+  }
+);
+
+
+// ========================================
 // GENERATE API KEY
-// ==============================
+// ========================================
 
 app.post(
   "/accounts/:id/api-key",
   requireBootstrapSecret,
-  (req, res) => {
+  async (req, res) => {
     try {
-      const account = getAccount(req.params.id);
+      const account =
+        await getAccount(
+          req.params.id
+        );
 
       if (!account) {
         return res.status(404).json({
-          error: "Account not found"
+          error:
+            "Account not found"
         });
       }
 
       const apiKey =
-        generateApiKey(account.id);
+        await generateApiKey(
+          account.id
+        );
 
       return res.status(201).json({
-        accountId: account.id,
+        accountId:
+          account.id,
         apiKey
       });
 
     } catch (error) {
+      console.error(
+        "GENERATE API KEY ERROR:",
+        error
+      );
+
       return res.status(400).json({
         error: error.message
       });
@@ -152,31 +249,15 @@ app.post(
   }
 );
 
-// ==============================
-// GET ACCOUNT
-// ==============================
 
-app.get("/accounts/:id", (req, res) => {
-  const account =
-    getAccount(req.params.id);
-
-  if (!account) {
-    return res.status(404).json({
-      error: "Account not found"
-    });
-  }
-
-  res.json(account);
-});
-
-// ==============================
+// ========================================
 // TRANSFER
-// ==============================
+// ========================================
 
 app.post(
   "/transfers",
   requireApiKey,
-  (req, res) => {
+  async (req, res) => {
     try {
       const {
         from,
@@ -207,41 +288,55 @@ app.post(
       }
 
       const amountMinor =
-        Math.round(Number(amount) * 100);
+        Math.round(
+          Number(amount) * 100
+        );
 
       if (
-        !Number.isFinite(amountMinor) ||
+        !Number.isFinite(
+          amountMinor
+        ) ||
         amountMinor <= 0
       ) {
         return res.status(400).json({
-          error: "Invalid amount"
+          error:
+            "Invalid amount"
         });
       }
 
-      res.status(201).json(
-        transfer(
+      const transaction =
+        await transfer(
           from,
           to,
           amountMinor
-        )
+        );
+
+      return res.status(201).json(
+        transaction
       );
 
     } catch (error) {
-      res.status(400).json({
+      console.error(
+        "TRANSFER ERROR:",
+        error
+      );
+
+      return res.status(400).json({
         error: error.message
       });
     }
   }
 );
 
-// ==============================
+
+// ========================================
 // CREATE DEPOSIT
-// ==============================
+// ========================================
 
 app.post(
   "/deposits",
   requireApiKey,
-  (req, res) => {
+  async (req, res) => {
     try {
       const {
         accountId,
@@ -265,7 +360,8 @@ app.post(
       }
 
       if (
-        req.auth.accountId !== accountId
+        req.auth.accountId !==
+        accountId
       ) {
         return res.status(403).json({
           error:
@@ -274,19 +370,24 @@ app.post(
       }
 
       const amountMinor =
-        Math.round(Number(amount) * 100);
+        Math.round(
+          Number(amount) * 100
+        );
 
       if (
-        !Number.isFinite(amountMinor) ||
+        !Number.isFinite(
+          amountMinor
+        ) ||
         amountMinor <= 0
       ) {
         return res.status(400).json({
-          error: "Invalid amount"
+          error:
+            "Invalid amount"
         });
       }
 
       const deposit =
-        createDeposit(
+        await createDeposit(
           accountId,
           amountMinor,
           method,
@@ -298,6 +399,11 @@ app.post(
       );
 
     } catch (error) {
+      console.error(
+        "CREATE DEPOSIT ERROR:",
+        error
+      );
+
       return res.status(400).json({
         error: error.message
       });
@@ -305,38 +411,23 @@ app.post(
   }
 );
 
-// ==============================
+
+// ========================================
 // GET DEPOSIT
-// ==============================
+// ========================================
 
 app.get(
   "/deposits/:id",
   requireApiKey,
-  (req, res) => {
+  async (req, res) => {
     try {
-      const file =
-        path.join(
-          __dirname,
-          "data",
-          "ledger.json"
-        );
-
-      if (!fs.existsSync(file)) {
-        return res.status(404).json({
-          error: "Deposit not found"
-        });
-      }
-
-      const ledger =
-        JSON.parse(
-          fs.readFileSync(
-            file,
-            "utf8"
-          )
+      const transactions =
+        await getTransactions(
+          req.auth.accountId
         );
 
       const deposit =
-        ledger.transactions.find(
+        transactions.find(
           transaction =>
             transaction.id ===
               req.params.id &&
@@ -346,23 +437,19 @@ app.get(
 
       if (!deposit) {
         return res.status(404).json({
-          error: "Deposit not found"
-        });
-      }
-
-      if (
-        deposit.accountId !==
-        req.auth.accountId
-      ) {
-        return res.status(403).json({
           error:
-            "API key is not authorized for this deposit"
+            "Deposit not found"
         });
       }
 
       return res.json(deposit);
 
     } catch (error) {
+      console.error(
+        "GET DEPOSIT ERROR:",
+        error
+      );
+
       return res.status(500).json({
         error: error.message
       });
@@ -370,38 +457,23 @@ app.get(
   }
 );
 
-// ==============================
+
+// ========================================
 // VERIFY DEPOSIT
-// ==============================
+// ========================================
 
 app.post(
   "/deposits/:id/verify",
   requireApiKey,
-  (req, res) => {
+  async (req, res) => {
     try {
-      const file =
-        path.join(
-          __dirname,
-          "data",
-          "ledger.json"
-        );
-
-      if (!fs.existsSync(file)) {
-        return res.status(404).json({
-          error: "Deposit not found"
-        });
-      }
-
-      const ledger =
-        JSON.parse(
-          fs.readFileSync(
-            file,
-            "utf8"
-          )
+      const transactions =
+        await getTransactions(
+          req.auth.accountId
         );
 
       const deposit =
-        ledger.transactions.find(
+        transactions.find(
           transaction =>
             transaction.id ===
               req.params.id &&
@@ -411,28 +483,24 @@ app.post(
 
       if (!deposit) {
         return res.status(404).json({
-          error: "Deposit not found"
-        });
-      }
-
-      if (
-        deposit.accountId !==
-        req.auth.accountId
-      ) {
-        return res.status(403).json({
           error:
-            "API key is not authorized for this deposit"
+            "Deposit not found"
         });
       }
 
       const verified =
-        verifyDeposit(
+        await verifyDeposit(
           req.params.id
         );
 
       return res.json(verified);
 
     } catch (error) {
+      console.error(
+        "VERIFY DEPOSIT ERROR:",
+        error
+      );
+
       return res.status(400).json({
         error: error.message
       });
@@ -440,14 +508,15 @@ app.post(
   }
 );
 
-// ==============================
+
+// ========================================
 // CREATE PAYMENT REQUEST
-// ==============================
+// ========================================
 
 app.post(
   "/payment-requests",
   requireApiKey,
-  (req, res) => {
+  async (req, res) => {
     try {
       const {
         merchantId,
@@ -468,20 +537,35 @@ app.post(
         });
       }
 
+      if (
+        req.auth.accountId !==
+        merchantId
+      ) {
+        return res.status(403).json({
+          error:
+            "API key is not authorized for this merchant account"
+        });
+      }
+
       const amountMinor =
-        Math.round(Number(amount) * 100);
+        Math.round(
+          Number(amount) * 100
+        );
 
       if (
-        !Number.isFinite(amountMinor) ||
+        !Number.isFinite(
+          amountMinor
+        ) ||
         amountMinor <= 0
       ) {
         return res.status(400).json({
-          error: "Invalid amount"
+          error:
+            "Invalid amount"
         });
       }
 
       const payment =
-        createPaymentRequest(
+        await createPaymentRequest(
           merchantId,
           customerId,
           amountMinor
@@ -492,6 +576,11 @@ app.post(
       );
 
     } catch (error) {
+      console.error(
+        "PAYMENT REQUEST ERROR:",
+        error
+      );
+
       return res.status(400).json({
         error: error.message
       });
@@ -499,36 +588,18 @@ app.post(
   }
 );
 
-// ==============================
+
+// ========================================
 // GET PAYMENT REQUEST
-// ==============================
+// ========================================
 
 app.get(
   "/payment-requests/:id",
-  (req, res) => {
+  async (req, res) => {
     try {
-      const file =
-        path.join(
-          __dirname,
-          "data",
-          "ledger.json"
-        );
-
-      const ledger =
-        JSON.parse(
-          fs.readFileSync(
-            file,
-            "utf8"
-          )
-        );
-
       const payment =
-        ledger.transactions.find(
-          transaction =>
-            transaction.id ===
-              req.params.id &&
-            transaction.type ===
-              "PAYMENT_REQUEST"
+        await getPaymentRequest(
+          req.params.id
         );
 
       if (!payment) {
@@ -541,6 +612,11 @@ app.get(
       return res.json(payment);
 
     } catch (error) {
+      console.error(
+        "GET PAYMENT REQUEST ERROR:",
+        error
+      );
+
       return res.status(500).json({
         error: error.message
       });
@@ -548,23 +624,52 @@ app.get(
   }
 );
 
-// ==============================
+
+// ========================================
 // COMPLETE PAYMENT
-// ==============================
+// ========================================
 
 app.post(
   "/payment-requests/:id/complete",
   requireApiKey,
-  (req, res) => {
+  async (req, res) => {
     try {
       const payment =
-        completePayment(
+        await getPaymentRequest(
           req.params.id
         );
 
-      return res.json(payment);
+      if (!payment) {
+        return res.status(404).json({
+          error:
+            "Payment request not found"
+        });
+      }
+
+      if (
+        payment.customerId !==
+        req.auth.accountId
+      ) {
+        return res.status(403).json({
+          error:
+            "API key is not authorized for this payment"
+        });
+      }
+
+      const result =
+        await completePayment(
+          req.params.id,
+          req.auth.accountId
+        );
+
+      return res.json(result);
 
     } catch (error) {
+      console.error(
+        "COMPLETE PAYMENT ERROR:",
+        error
+      );
+
       return res.status(400).json({
         error: error.message
       });
@@ -572,70 +677,19 @@ app.post(
   }
 );
 
-// ==============================
-// GET TRANSACTIONS
-// ==============================
+
+// ========================================
+// TRANSACTIONS
+// ========================================
 
 app.get(
   "/transactions",
   requireApiKey,
-  (req, res) => {
+  async (req, res) => {
     try {
-      const file =
-        path.join(
-          __dirname,
-          "data",
-          "ledger.json"
-        );
-
-      const ledger =
-        JSON.parse(
-          fs.readFileSync(
-            file,
-            "utf8"
-          )
-        );
-
       const transactions =
-        ledger.transactions.filter(
-          transaction => {
-
-            if (
-              transaction.type ===
-              "DEPOSIT"
-            ) {
-              return (
-                transaction.accountId ===
-                req.auth.accountId
-              );
-            }
-
-            if (
-              transaction.type ===
-              "TRANSFER"
-            ) {
-              return (
-                transaction.from ===
-                  req.auth.accountId ||
-                transaction.to ===
-                  req.auth.accountId
-              );
-            }
-
-            if (
-              transaction.type ===
-              "PAYMENT_REQUEST"
-            ) {
-              return (
-                transaction.merchantId ===
-                  req.auth.accountId ||
-                transaction.customerId ===
-                  req.auth.accountId
-              );
-            }
-
-            return false;
-          }
+        await getTransactions(
+          req.auth.accountId
         );
 
       return res.json(
@@ -643,6 +697,11 @@ app.get(
       );
 
     } catch (error) {
+      console.error(
+        "TRANSACTIONS ERROR:",
+        error
+      );
+
       return res.status(500).json({
         error: error.message
       });
@@ -650,15 +709,39 @@ app.get(
   }
 );
 
-// ==============================
+
+// ========================================
 // START SERVER
-// ==============================
+// ========================================
 
 const PORT =
   process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log(
-    `Payment API running on port ${PORT}`
-  );
-});
+async function startServer() {
+  try {
+    await initDatabase();
+
+    app.listen(
+      PORT,
+      () => {
+        console.log(
+          `Payment API running on port ${PORT}`
+        );
+
+        console.log(
+          "PostgreSQL database connected"
+        );
+      }
+    );
+
+  } catch (error) {
+    console.error(
+      "DATABASE STARTUP ERROR:",
+      error
+    );
+
+    process.exit(1);
+  }
+}
+
+startServer();

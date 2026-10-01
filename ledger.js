@@ -1,73 +1,106 @@
 const crypto = require("crypto");
-const fs = require("fs");
-const path = require("path");
+const { Pool } = require("pg");
 
-const dataDir = path.join(__dirname, "data");
-const file = path.join(dataDir, "ledger.json");
-
-function ensureDataDirectory() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is not configured");
 }
 
-function createEmptyLedger() {
-  return {
-    accounts: [],
-    transactions: [],
-    apiKeys: []
-  };
-}
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
 
-function loadLedger() {
-  ensureDataDirectory();
+let databaseReady = false;
 
-  if (!fs.existsSync(file)) {
-    return createEmptyLedger();
+
+// ========================================
+// DATABASE INITIALIZATION
+// ========================================
+
+async function initDatabase() {
+  if (databaseReady) {
+    return;
   }
 
-  let ledger;
-
-  try {
-    ledger = JSON.parse(
-      fs.readFileSync(file, "utf8")
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      owner TEXT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'KES',
+      balance_minor BIGINT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL
     );
-  } catch (error) {
-    throw new Error("Ledger file is corrupted or invalid");
-  }
 
-  if (!ledger || typeof ledger !== "object") {
-    throw new Error("Invalid ledger");
-  }
+    CREATE TABLE IF NOT EXISTS api_keys (
+      key_hash TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id),
+      created_at TIMESTAMPTZ NOT NULL
+    );
 
-  if (!Array.isArray(ledger.accounts)) {
-    ledger.accounts = [];
-  }
+    CREATE TABLE IF NOT EXISTS transactions (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
 
-  if (!Array.isArray(ledger.transactions)) {
-    ledger.transactions = [];
-  }
+      account_id TEXT,
 
-  if (!Array.isArray(ledger.apiKeys)) {
-    ledger.apiKeys = [];
-  }
+      from_account TEXT,
+      to_account TEXT,
 
-  return ledger;
+      merchant_id TEXT,
+      customer_id TEXT,
+
+      payment_id TEXT,
+
+      amount_minor BIGINT,
+
+      currency TEXT,
+
+      method TEXT,
+      reference TEXT,
+
+      status TEXT NOT NULL,
+
+      created_at TIMESTAMPTZ NOT NULL,
+
+      verified_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS
+      deposits_reference_unique
+      ON transactions(reference)
+      WHERE type = 'DEPOSIT';
+
+    CREATE INDEX IF NOT EXISTS
+      transactions_account_idx
+      ON transactions(account_id);
+
+    CREATE INDEX IF NOT EXISTS
+      transactions_from_idx
+      ON transactions(from_account);
+
+    CREATE INDEX IF NOT EXISTS
+      transactions_to_idx
+      ON transactions(to_account);
+
+    CREATE INDEX IF NOT EXISTS
+      transactions_merchant_idx
+      ON transactions(merchant_id);
+
+    CREATE INDEX IF NOT EXISTS
+      transactions_customer_idx
+      ON transactions(customer_id);
+  `);
+
+  databaseReady = true;
 }
 
-function saveLedger(ledger) {
-  ensureDataDirectory();
 
-  const tempFile = `${file}.tmp`;
-
-  fs.writeFileSync(
-    tempFile,
-    JSON.stringify(ledger, null, 2),
-    "utf8"
-  );
-
-  fs.renameSync(tempFile, file);
-}
+// ========================================
+// HELPERS
+// ========================================
 
 function generateId(prefix) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -91,21 +124,116 @@ function validateAmount(amountMinor) {
   }
 }
 
+function accountFromRow(row) {
+  if (!row) {
+    return null;
+  }
 
-// ==============================
+  return {
+    id: row.id,
+    owner: row.owner,
+    currency: row.currency,
+    balanceMinor: Number(row.balance_minor),
+    createdAt: row.created_at
+  };
+}
+
+function transactionFromRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  const transaction = {
+    id: row.id,
+    type: row.type,
+    status: row.status,
+    createdAt: row.created_at
+  };
+
+  if (row.account_id) {
+    transaction.accountId =
+      row.account_id;
+  }
+
+  if (row.from_account) {
+    transaction.from =
+      row.from_account;
+  }
+
+  if (row.to_account) {
+    transaction.to =
+      row.to_account;
+  }
+
+  if (row.merchant_id) {
+    transaction.merchantId =
+      row.merchant_id;
+  }
+
+  if (row.customer_id) {
+    transaction.customerId =
+      row.customer_id;
+  }
+
+  if (row.payment_id) {
+    transaction.paymentId =
+      row.payment_id;
+  }
+
+  if (row.amount_minor !== null) {
+    transaction.amountMinor =
+      Number(row.amount_minor);
+  }
+
+  if (row.currency) {
+    transaction.currency =
+      row.currency;
+  }
+
+  if (row.method) {
+    transaction.method =
+      row.method;
+  }
+
+  if (row.reference) {
+    transaction.reference =
+      row.reference;
+  }
+
+  if (row.verified_at) {
+    transaction.verifiedAt =
+      row.verified_at;
+  }
+
+  if (row.completed_at) {
+    transaction.completedAt =
+      row.completed_at;
+  }
+
+  return transaction;
+}
+
+
+// ========================================
 // API KEYS
-// ==============================
+// ========================================
 
-function generateApiKey(accountId) {
+async function generateApiKey(accountId) {
   validateAccountId(accountId);
 
-  const ledger = loadLedger();
+  await initDatabase();
 
-  const account = ledger.accounts.find(
-    account => account.id === accountId
-  );
+  const account =
+    await pool.query(
+      `
+        SELECT id
+        FROM accounts
+        WHERE id = $1
+      `,
+      [accountId]
+    );
 
-  if (!account) {
+  if (account.rowCount === 0) {
     throw new Error("Account not found");
   }
 
@@ -113,51 +241,79 @@ function generateApiKey(accountId) {
     "pk_" +
     crypto.randomBytes(32).toString("hex");
 
-  const keyHash = crypto
-    .createHash("sha256")
-    .update(rawKey)
-    .digest("hex");
+  const keyHash =
+    crypto
+      .createHash("sha256")
+      .update(rawKey)
+      .digest("hex");
 
-  ledger.apiKeys.push({
-    keyHash,
-    accountId,
-    createdAt: new Date().toISOString()
-  });
-
-  saveLedger(ledger);
+  await pool.query(
+    `
+      INSERT INTO api_keys
+      (
+        key_hash,
+        account_id,
+        created_at
+      )
+      VALUES ($1, $2, NOW())
+    `,
+    [
+      keyHash,
+      accountId
+    ]
+  );
 
   return rawKey;
 }
 
-function authenticateApiKey(rawKey) {
+async function authenticateApiKey(rawKey) {
   if (!rawKey) {
     return null;
   }
 
-  const ledger = loadLedger();
+  await initDatabase();
 
-  const keyHash = crypto
-    .createHash("sha256")
-    .update(rawKey)
-    .digest("hex");
+  const keyHash =
+    crypto
+      .createHash("sha256")
+      .update(rawKey)
+      .digest("hex");
 
-  const record = ledger.apiKeys.find(
-    key => key.keyHash === keyHash
-  );
+  const result =
+    await pool.query(
+      `
+        SELECT
+          key_hash,
+          account_id,
+          created_at
+        FROM api_keys
+        WHERE key_hash = $1
+      `,
+      [keyHash]
+    );
 
-  if (!record) {
+  if (result.rowCount === 0) {
     return null;
   }
 
-  return record;
+  return {
+    keyHash:
+      result.rows[0].key_hash,
+
+    accountId:
+      result.rows[0].account_id,
+
+    createdAt:
+      result.rows[0].created_at
+  };
 }
 
 
-// ==============================
+// ========================================
 // ACCOUNTS
-// ==============================
+// ========================================
 
-function createAccount(owner) {
+async function createAccount(owner) {
   if (
     typeof owner !== "string" ||
     owner.trim() === ""
@@ -165,41 +321,76 @@ function createAccount(owner) {
     throw new Error("Owner is required");
   }
 
-  const ledger = loadLedger();
+  await initDatabase();
 
   const account = {
     id: generateId("ACC"),
     owner: owner.trim(),
     currency: "KES",
     balanceMinor: 0,
-    createdAt: new Date().toISOString()
+    createdAt:
+      new Date().toISOString()
   };
 
-  ledger.accounts.push(account);
-
-  saveLedger(ledger);
+  await pool.query(
+    `
+      INSERT INTO accounts
+      (
+        id,
+        owner,
+        currency,
+        balance_minor,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, $5)
+    `,
+    [
+      account.id,
+      account.owner,
+      account.currency,
+      account.balanceMinor,
+      account.createdAt
+    ]
+  );
 
   return account;
 }
 
-function getAccount(id) {
+async function getAccount(id) {
   validateAccountId(id);
 
-  const ledger = loadLedger();
+  await initDatabase();
 
-  return (
-    ledger.accounts.find(
-      account => account.id === id
-    ) || null
+  const result =
+    await pool.query(
+      `
+        SELECT
+          id,
+          owner,
+          currency,
+          balance_minor,
+          created_at
+        FROM accounts
+        WHERE id = $1
+      `,
+      [id]
+    );
+
+  return accountFromRow(
+    result.rows[0]
   );
 }
 
 
-// ==============================
+// ========================================
 // TRANSFERS
-// ==============================
+// ========================================
 
-function transfer(fromId, toId, amountMinor) {
+async function transfer(
+  fromId,
+  toId,
+  amountMinor
+) {
   validateAccountId(fromId);
   validateAccountId(toId);
   validateAmount(amountMinor);
@@ -210,55 +401,150 @@ function transfer(fromId, toId, amountMinor) {
     );
   }
 
-  const ledger = loadLedger();
+  await initDatabase();
 
-  const from = ledger.accounts.find(
-    account => account.id === fromId
-  );
+  const client =
+    await pool.connect();
 
-  const to = ledger.accounts.find(
-    account => account.id === toId
-  );
+  try {
+    await client.query("BEGIN");
 
-  if (!from || !to) {
-    throw new Error("Account not found");
+    const result =
+      await client.query(
+        `
+          SELECT
+            id,
+            currency,
+            balance_minor
+          FROM accounts
+          WHERE id IN ($1, $2)
+          FOR UPDATE
+        `,
+        [
+          fromId,
+          toId
+        ]
+      );
+
+    const from =
+      result.rows.find(
+        row => row.id === fromId
+      );
+
+    const to =
+      result.rows.find(
+        row => row.id === toId
+      );
+
+    if (!from || !to) {
+      throw new Error(
+        "Account not found"
+      );
+    }
+
+    if (
+      from.currency !==
+      to.currency
+    ) {
+      throw new Error(
+        "Currency mismatch"
+      );
+    }
+
+    if (
+      Number(from.balance_minor) <
+      amountMinor
+    ) {
+      throw new Error(
+        "Insufficient balance"
+      );
+    }
+
+    await client.query(
+      `
+        UPDATE accounts
+        SET balance_minor =
+          balance_minor - $1
+        WHERE id = $2
+      `,
+      [
+        amountMinor,
+        fromId
+      ]
+    );
+
+    await client.query(
+      `
+        UPDATE accounts
+        SET balance_minor =
+          balance_minor + $1
+        WHERE id = $2
+      `,
+      [
+        amountMinor,
+        toId
+      ]
+    );
+
+    const transaction = {
+      id: generateId("TX"),
+      type: "TRANSFER",
+      from: fromId,
+      to: toId,
+      amountMinor,
+      currency: from.currency,
+      status: "SUCCESS",
+      createdAt:
+        new Date().toISOString()
+    };
+
+    await client.query(
+      `
+        INSERT INTO transactions
+        (
+          id,
+          type,
+          from_account,
+          to_account,
+          amount_minor,
+          currency,
+          status,
+          created_at
+        )
+        VALUES
+        ($1,$2,$3,$4,$5,$6,$7,$8)
+      `,
+      [
+        transaction.id,
+        transaction.type,
+        transaction.from,
+        transaction.to,
+        transaction.amountMinor,
+        transaction.currency,
+        transaction.status,
+        transaction.createdAt
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    return transaction;
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+
+  } finally {
+    client.release();
   }
-
-  if (from.currency !== to.currency) {
-    throw new Error("Currency mismatch");
-  }
-
-  if (from.balanceMinor < amountMinor) {
-    throw new Error("Insufficient balance");
-  }
-
-  from.balanceMinor -= amountMinor;
-  to.balanceMinor += amountMinor;
-
-  const transaction = {
-    id: generateId("TX"),
-    type: "TRANSFER",
-    from: fromId,
-    to: toId,
-    amountMinor,
-    currency: from.currency,
-    status: "SUCCESS",
-    createdAt: new Date().toISOString()
-  };
-
-  ledger.transactions.push(transaction);
-
-  saveLedger(ledger);
-
-  return transaction;
 }
 
 
-// ==============================
+// ========================================
 // DEPOSITS
-// ==============================
+// ========================================
 
-function createDeposit(
+async function createDeposit(
   accountId,
   amountMinor,
   method,
@@ -267,15 +553,7 @@ function createDeposit(
   validateAccountId(accountId);
   validateAmount(amountMinor);
 
-  const ledger = loadLedger();
-
-  const account = ledger.accounts.find(
-    account => account.id === accountId
-  );
-
-  if (!account) {
-    throw new Error("Account not found");
-  }
+  await initDatabase();
 
   const allowedMethods = [
     "BANK",
@@ -283,8 +561,12 @@ function createDeposit(
     "MOBILE_MONEY"
   ];
 
-  if (!allowedMethods.includes(method)) {
-    throw new Error("Invalid deposit method");
+  if (
+    !allowedMethods.includes(method)
+  ) {
+    throw new Error(
+      "Invalid deposit method"
+    );
   }
 
   if (
@@ -296,14 +578,39 @@ function createDeposit(
     );
   }
 
-  const existingReference =
-    ledger.transactions.find(
-      transaction =>
-        transaction.type === "DEPOSIT" &&
-        transaction.reference === reference
+  const accountResult =
+    await pool.query(
+      `
+        SELECT
+          id,
+          currency
+        FROM accounts
+        WHERE id = $1
+      `,
+      [accountId]
     );
 
-  if (existingReference) {
+  if (accountResult.rowCount === 0) {
+    throw new Error(
+      "Account not found"
+    );
+  }
+
+  const account =
+    accountResult.rows[0];
+
+  const existing =
+    await pool.query(
+      `
+        SELECT id
+        FROM transactions
+        WHERE type = 'DEPOSIT'
+        AND reference = $1
+      `,
+      [reference.trim()]
+    );
+
+  if (existing.rowCount > 0) {
     throw new Error(
       "Deposit reference already exists"
     );
@@ -318,71 +625,202 @@ function createDeposit(
     method,
     reference: reference.trim(),
     status: "PENDING",
-    createdAt: new Date().toISOString()
+    createdAt:
+      new Date().toISOString()
   };
 
-  ledger.transactions.push(deposit);
-
-  saveLedger(ledger);
+  await pool.query(
+    `
+      INSERT INTO transactions
+      (
+        id,
+        type,
+        account_id,
+        amount_minor,
+        currency,
+        method,
+        reference,
+        status,
+        created_at
+      )
+      VALUES
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `,
+    [
+      deposit.id,
+      deposit.type,
+      deposit.accountId,
+      deposit.amountMinor,
+      deposit.currency,
+      deposit.method,
+      deposit.reference,
+      deposit.status,
+      deposit.createdAt
+    ]
+  );
 
   return deposit;
 }
 
-
-// ==============================
-// VERIFY DEPOSIT
-// ==============================
-
-function verifyDeposit(depositId) {
+async function getDeposit(depositId) {
   if (
     typeof depositId !== "string" ||
     depositId.trim() === ""
   ) {
-    throw new Error("Invalid deposit ID");
+    throw new Error(
+      "Invalid deposit ID"
+    );
   }
 
-  const ledger = loadLedger();
+  await initDatabase();
 
-  const deposit = ledger.transactions.find(
-    transaction =>
-      transaction.id === depositId &&
-      transaction.type === "DEPOSIT"
+  const result =
+    await pool.query(
+      `
+        SELECT *
+        FROM transactions
+        WHERE id = $1
+        AND type = 'DEPOSIT'
+      `,
+      [depositId]
+    );
+
+  return transactionFromRow(
+    result.rows[0]
   );
-
-  if (!deposit) {
-    throw new Error("Deposit not found");
-  }
-
-  if (deposit.status !== "PENDING") {
-    throw new Error("Deposit is not pending");
-  }
-
-  const account = ledger.accounts.find(
-    account =>
-      account.id === deposit.accountId
-  );
-
-  if (!account) {
-    throw new Error("Account not found");
-  }
-
-  account.balanceMinor += deposit.amountMinor;
-
-  deposit.status = "SUCCESS";
-  deposit.verifiedAt =
-    new Date().toISOString();
-
-  saveLedger(ledger);
-
-  return deposit;
 }
 
 
-// ==============================
-// PAYMENT REQUESTS
-// ==============================
+// ========================================
+// VERIFY DEPOSIT
+// ========================================
 
-function createPaymentRequest(
+async function verifyDeposit(
+  depositId
+) {
+  if (
+    typeof depositId !== "string" ||
+    depositId.trim() === ""
+  ) {
+    throw new Error(
+      "Invalid deposit ID"
+    );
+  }
+
+  await initDatabase();
+
+  const client =
+    await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const depositResult =
+      await client.query(
+        `
+          SELECT *
+          FROM transactions
+          WHERE id = $1
+          AND type = 'DEPOSIT'
+          FOR UPDATE
+        `,
+        [depositId]
+      );
+
+    if (
+      depositResult.rowCount === 0
+    ) {
+      throw new Error(
+        "Deposit not found"
+      );
+    }
+
+    const deposit =
+      depositResult.rows[0];
+
+    if (
+      deposit.status !==
+      "PENDING"
+    ) {
+      throw new Error(
+        "Deposit is not pending"
+      );
+    }
+
+    const accountResult =
+      await client.query(
+        `
+          SELECT *
+          FROM accounts
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [deposit.account_id]
+      );
+
+    if (
+      accountResult.rowCount === 0
+    ) {
+      throw new Error(
+        "Account not found"
+      );
+    }
+
+    const verifiedAt =
+      new Date().toISOString();
+
+    await client.query(
+      `
+        UPDATE accounts
+        SET balance_minor =
+          balance_minor + $1
+        WHERE id = $2
+      `,
+      [
+        Number(
+          deposit.amount_minor
+        ),
+        deposit.account_id
+      ]
+    );
+
+    await client.query(
+      `
+        UPDATE transactions
+        SET
+          status = 'SUCCESS',
+          verified_at = $1
+        WHERE id = $2
+      `,
+      [
+        verifiedAt,
+        depositId
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    return transactionFromRow({
+      ...deposit,
+      status: "SUCCESS",
+      verified_at: verifiedAt
+    });
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+
+  } finally {
+    client.release();
+  }
+}
+
+
+// ========================================
+// PAYMENT REQUESTS
+// ========================================
+
+async function createPaymentRequest(
   merchantId,
   customerId,
   amountMinor
@@ -397,22 +835,46 @@ function createPaymentRequest(
     );
   }
 
-  const ledger = loadLedger();
+  await initDatabase();
 
-  const merchant = ledger.accounts.find(
-    account => account.id === merchantId
-  );
+  const result =
+    await pool.query(
+      `
+        SELECT
+          id,
+          currency
+        FROM accounts
+        WHERE id IN ($1, $2)
+      `,
+      [
+        merchantId,
+        customerId
+      ]
+    );
 
-  const customer = ledger.accounts.find(
-    account => account.id === customerId
-  );
+  const merchant =
+    result.rows.find(
+      row => row.id === merchantId
+    );
+
+  const customer =
+    result.rows.find(
+      row => row.id === customerId
+    );
 
   if (!merchant || !customer) {
-    throw new Error("Account not found");
+    throw new Error(
+      "Account not found"
+    );
   }
 
-  if (merchant.currency !== customer.currency) {
-    throw new Error("Currency mismatch");
+  if (
+    merchant.currency !==
+    customer.currency
+  ) {
+    throw new Error(
+      "Currency mismatch"
+    );
   }
 
   const payment = {
@@ -423,36 +885,98 @@ function createPaymentRequest(
     amountMinor,
     currency: customer.currency,
     status: "PENDING",
-    createdAt: new Date().toISOString()
+    createdAt:
+      new Date().toISOString()
   };
 
-  ledger.transactions.push(payment);
-
-  saveLedger(ledger);
+  await pool.query(
+    `
+      INSERT INTO transactions
+      (
+        id,
+        type,
+        merchant_id,
+        customer_id,
+        amount_minor,
+        currency,
+        status,
+        created_at
+      )
+      VALUES
+      ($1,$2,$3,$4,$5,$6,$7,$8)
+    `,
+    [
+      payment.id,
+      payment.type,
+      payment.merchantId,
+      payment.customerId,
+      payment.amountMinor,
+      payment.currency,
+      payment.status,
+      payment.createdAt
+    ]
+  );
 
   return payment;
 }
 
-function getPaymentRequest(paymentId) {
+async function getPaymentRequest(
+  paymentId
+) {
   if (
     typeof paymentId !== "string" ||
     paymentId.trim() === ""
   ) {
-    throw new Error("Invalid payment ID");
+    throw new Error(
+      "Invalid payment ID"
+    );
   }
 
-  const ledger = loadLedger();
+  await initDatabase();
 
-  return (
-    ledger.transactions.find(
-      transaction =>
-        transaction.id === paymentId &&
-        transaction.type === "PAYMENT_REQUEST"
-    ) || null
-  );
+  const result =
+    await pool.query(
+      `
+        SELECT *
+        FROM transactions
+        WHERE id = $1
+        AND type = 'PAYMENT_REQUEST'
+      `,
+      [paymentId]
+    );
+
+  const row =
+    result.rows[0];
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    type: row.type,
+    merchantId: row.merchant_id,
+    customerId: row.customer_id,
+    amountMinor:
+      Number(row.amount_minor),
+    currency: row.currency,
+    status: row.status,
+    createdAt: row.created_at,
+    ...(row.completed_at
+      ? {
+          completedAt:
+            row.completed_at
+        }
+      : {})
+  };
 }
 
-function completePayment(
+
+// ========================================
+// COMPLETE PAYMENT
+// ========================================
+
+async function completePayment(
   paymentId,
   authorizedAccountId = null
 ) {
@@ -460,135 +984,303 @@ function completePayment(
     typeof paymentId !== "string" ||
     paymentId.trim() === ""
   ) {
-    throw new Error("Invalid payment ID");
-  }
-
-  const ledger = loadLedger();
-
-  const payment = ledger.transactions.find(
-    transaction =>
-      transaction.id === paymentId &&
-      transaction.type === "PAYMENT_REQUEST"
-  );
-
-  if (!payment) {
-    throw new Error("Payment request not found");
-  }
-
-  if (payment.status !== "PENDING") {
-    throw new Error("Payment is not pending");
-  }
-
-  if (
-    authorizedAccountId &&
-    authorizedAccountId !== payment.customerId
-  ) {
     throw new Error(
-      "API key is not authorized for this payment"
+      "Invalid payment ID"
     );
   }
 
-  const customer = ledger.accounts.find(
-    account =>
-      account.id === payment.customerId
-  );
+  await initDatabase();
 
-  const merchant = ledger.accounts.find(
-    account =>
-      account.id === payment.merchantId
-  );
+  const client =
+    await pool.connect();
 
-  if (!customer || !merchant) {
-    throw new Error("Account not found");
-  }
+  try {
+    await client.query("BEGIN");
 
-  if (customer.currency !== payment.currency) {
-    throw new Error(
-      "Customer currency mismatch"
+    const paymentResult =
+      await client.query(
+        `
+          SELECT *
+          FROM transactions
+          WHERE id = $1
+          AND type = 'PAYMENT_REQUEST'
+          FOR UPDATE
+        `,
+        [paymentId]
+      );
+
+    if (
+      paymentResult.rowCount === 0
+    ) {
+      throw new Error(
+        "Payment request not found"
+      );
+    }
+
+    const payment =
+      paymentResult.rows[0];
+
+    if (
+      payment.status !==
+      "PENDING"
+    ) {
+      throw new Error(
+        "Payment is not pending"
+      );
+    }
+
+    if (
+      authorizedAccountId &&
+      authorizedAccountId !==
+        payment.customer_id
+    ) {
+      throw new Error(
+        "API key is not authorized for this payment"
+      );
+    }
+
+    const accountsResult =
+      await client.query(
+        `
+          SELECT *
+          FROM accounts
+          WHERE id IN ($1, $2)
+          FOR UPDATE
+        `,
+        [
+          payment.customer_id,
+          payment.merchant_id
+        ]
+      );
+
+    const customer =
+      accountsResult.rows.find(
+        row =>
+          row.id ===
+          payment.customer_id
+      );
+
+    const merchant =
+      accountsResult.rows.find(
+        row =>
+          row.id ===
+          payment.merchant_id
+      );
+
+    if (!customer || !merchant) {
+      throw new Error(
+        "Account not found"
+      );
+    }
+
+    if (
+      customer.currency !==
+      payment.currency
+    ) {
+      throw new Error(
+        "Customer currency mismatch"
+      );
+    }
+
+    if (
+      merchant.currency !==
+      payment.currency
+    ) {
+      throw new Error(
+        "Merchant currency mismatch"
+      );
+    }
+
+    const amountMinor =
+      Number(payment.amount_minor);
+
+    if (
+      Number(customer.balance_minor) <
+      amountMinor
+    ) {
+      throw new Error(
+        "Insufficient customer balance"
+      );
+    }
+
+    await client.query(
+      `
+        UPDATE accounts
+        SET balance_minor =
+          balance_minor - $1
+        WHERE id = $2
+      `,
+      [
+        amountMinor,
+        customer.id
+      ]
     );
-  }
 
-  if (merchant.currency !== payment.currency) {
-    throw new Error(
-      "Merchant currency mismatch"
+    await client.query(
+      `
+        UPDATE accounts
+        SET balance_minor =
+          balance_minor + $1
+        WHERE id = $2
+      `,
+      [
+        amountMinor,
+        merchant.id
+      ]
     );
-  }
 
-  if (
-    customer.balanceMinor <
-    payment.amountMinor
-  ) {
-    throw new Error(
-      "Insufficient customer balance"
+    const completedAt =
+      new Date().toISOString();
+
+    await client.query(
+      `
+        UPDATE transactions
+        SET
+          status = 'SUCCESS',
+          completed_at = $1
+        WHERE id = $2
+      `,
+      [
+        completedAt,
+        paymentId
+      ]
     );
+
+    const settlement = {
+      id: generateId("SET"),
+      type: "PAYMENT_SETTLEMENT",
+      paymentId: payment.id,
+      from: customer.id,
+      to: merchant.id,
+      amountMinor,
+      currency: payment.currency,
+      status: "SUCCESS",
+      createdAt:
+        new Date().toISOString()
+    };
+
+    await client.query(
+      `
+        INSERT INTO transactions
+        (
+          id,
+          type,
+          from_account,
+          to_account,
+          payment_id,
+          amount_minor,
+          currency,
+          status,
+          created_at
+        )
+        VALUES
+        ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `,
+      [
+        settlement.id,
+        settlement.type,
+        settlement.from,
+        settlement.to,
+        settlement.paymentId,
+        settlement.amountMinor,
+        settlement.currency,
+        settlement.status,
+        settlement.createdAt
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      payment: {
+        id: payment.id,
+        type: payment.type,
+        merchantId:
+          payment.merchant_id,
+        customerId:
+          payment.customer_id,
+        amountMinor,
+        currency:
+          payment.currency,
+        status: "SUCCESS",
+        createdAt:
+          payment.created_at,
+        completedAt
+      },
+      settlement
+    };
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+
+  } finally {
+    client.release();
   }
-
-  customer.balanceMinor -= payment.amountMinor;
-  merchant.balanceMinor += payment.amountMinor;
-
-  payment.status = "SUCCESS";
-  payment.completedAt =
-    new Date().toISOString();
-
-  const settlement = {
-    id: generateId("SET"),
-    type: "PAYMENT_SETTLEMENT",
-    paymentId: payment.id,
-    from: customer.id,
-    to: merchant.id,
-    amountMinor: payment.amountMinor,
-    currency: payment.currency,
-    status: "SUCCESS",
-    createdAt: new Date().toISOString()
-  };
-
-  ledger.transactions.push(settlement);
-
-  saveLedger(ledger);
-
-  return {
-    payment,
-    settlement
-  };
 }
 
 
-// ==============================
+// ========================================
 // TRANSACTIONS
-// ==============================
+// ========================================
 
-function getTransactions(accountId = null) {
-  const ledger = loadLedger();
+async function getTransactions(
+  accountId = null
+) {
+  await initDatabase();
 
   if (!accountId) {
-    return ledger.transactions;
+    const result =
+      await pool.query(
+        `
+          SELECT *
+          FROM transactions
+          ORDER BY created_at DESC
+        `
+      );
+
+    return result.rows.map(
+      transactionFromRow
+    );
   }
 
   validateAccountId(accountId);
 
-  return ledger.transactions.filter(
-    transaction =>
-      transaction.account === accountId ||
-      transaction.accountId === accountId ||
-      transaction.from === accountId ||
-      transaction.to === accountId ||
-      transaction.merchantId === accountId ||
-      transaction.customerId === accountId
+  const result =
+    await pool.query(
+      `
+        SELECT *
+        FROM transactions
+        WHERE
+          account_id = $1
+          OR from_account = $1
+          OR to_account = $1
+          OR merchant_id = $1
+          OR customer_id = $1
+        ORDER BY created_at DESC
+      `,
+      [accountId]
+    );
+
+  return result.rows.map(
+    transactionFromRow
   );
 }
 
 
-// ==============================
+// ========================================
 // EXPORTS
-// ==============================
+// ========================================
 
 module.exports = {
+  initDatabase,
   generateApiKey,
   authenticateApiKey,
   createAccount,
   getAccount,
   transfer,
   createDeposit,
+  getDeposit,
   verifyDeposit,
   createPaymentRequest,
   getPaymentRequest,
