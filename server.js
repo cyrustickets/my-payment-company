@@ -8,6 +8,7 @@ const {
   getAccount,
   transfer,
   createDeposit,
+  getDeposit,
   verifyDeposit,
   createPaymentRequest,
   getPaymentRequest,
@@ -19,6 +20,10 @@ const {
   generateApiKey,
   authenticateApiKey
 } = require("./auth");
+
+const {
+  createSafaricomWithdrawal
+} = require("./withdrawal");
 
 const app = express();
 
@@ -66,6 +71,7 @@ async function requireApiKey(req, res, next) {
     }
 
     req.auth = auth;
+
     next();
 
   } catch (error) {
@@ -74,7 +80,7 @@ async function requireApiKey(req, res, next) {
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       error: error.message
     });
   }
@@ -85,7 +91,11 @@ async function requireApiKey(req, res, next) {
 // BOOTSTRAP SECRET
 // ========================================
 
-function requireBootstrapSecret(req, res, next) {
+function requireBootstrapSecret(
+  req,
+  res,
+  next
+) {
   const secret =
     req.headers["x-bootstrap-secret"];
 
@@ -293,7 +303,7 @@ app.post(
         );
 
       if (
-        !Number.isFinite(
+        !Number.isSafeInteger(
           amountMinor
         ) ||
         amountMinor <= 0
@@ -375,7 +385,7 @@ app.post(
         );
 
       if (
-        !Number.isFinite(
+        !Number.isSafeInteger(
           amountMinor
         ) ||
         amountMinor <= 0
@@ -421,24 +431,25 @@ app.get(
   requireApiKey,
   async (req, res) => {
     try {
-      const transactions =
-        await getTransactions(
-          req.auth.accountId
-        );
-
       const deposit =
-        transactions.find(
-          transaction =>
-            transaction.id ===
-              req.params.id &&
-            transaction.type ===
-              "DEPOSIT"
+        await getDeposit(
+          req.params.id
         );
 
       if (!deposit) {
         return res.status(404).json({
           error:
             "Deposit not found"
+        });
+      }
+
+      if (
+        deposit.accountId !==
+        req.auth.accountId
+      ) {
+        return res.status(403).json({
+          error:
+            "API key is not authorized for this deposit"
         });
       }
 
@@ -467,24 +478,25 @@ app.post(
   requireApiKey,
   async (req, res) => {
     try {
-      const transactions =
-        await getTransactions(
-          req.auth.accountId
-        );
-
       const deposit =
-        transactions.find(
-          transaction =>
-            transaction.id ===
-              req.params.id &&
-            transaction.type ===
-              "DEPOSIT"
+        await getDeposit(
+          req.params.id
         );
 
       if (!deposit) {
         return res.status(404).json({
           error:
             "Deposit not found"
+        });
+      }
+
+      if (
+        deposit.accountId !==
+        req.auth.accountId
+      ) {
+        return res.status(403).json({
+          error:
+            "API key is not authorized for this deposit"
         });
       }
 
@@ -553,7 +565,7 @@ app.post(
         );
 
       if (
-        !Number.isFinite(
+        !Number.isSafeInteger(
           amountMinor
         ) ||
         amountMinor <= 0
@@ -667,6 +679,74 @@ app.post(
     } catch (error) {
       console.error(
         "COMPLETE PAYMENT ERROR:",
+        error
+      );
+
+      return res.status(400).json({
+        error: error.message
+      });
+    }
+  }
+);
+
+
+// ========================================
+// SEND MONEY TO SAFARICOM NUMBER
+// ========================================
+
+app.post(
+  "/withdrawals/safaricom",
+  requireApiKey,
+  async (req, res) => {
+    try {
+      const {
+        phone,
+        amount
+      } = req.body;
+
+      if (
+        !phone ||
+        amount === undefined ||
+        amount === null ||
+        amount === ""
+      ) {
+        return res.status(400).json({
+          error:
+            "phone and amount are required"
+        });
+      }
+
+      const amountMinor =
+        Math.round(
+          Number(amount) * 100
+        );
+
+      if (
+        !Number.isSafeInteger(
+          amountMinor
+        ) ||
+        amountMinor <= 0
+      ) {
+        return res.status(400).json({
+          error:
+            "Invalid amount"
+        });
+      }
+
+      const withdrawal =
+        await createSafaricomWithdrawal(
+          req.auth.accountId,
+          phone,
+          amountMinor
+        );
+
+      return res.status(201).json(
+        withdrawal
+      );
+
+    } catch (error) {
+      console.error(
+        "SAFARICOM WITHDRAWAL ERROR:",
         error
       );
 
