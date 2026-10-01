@@ -1,5 +1,11 @@
+
+
+
+
 const express = require("express");
 const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
 
 const {
   createAccount,
@@ -16,14 +22,13 @@ const {
   authenticateApiKey
 } = require("./auth");
 
-const fs = require("fs");
-const path = require("path");
-
 const app = express();
 
 app.use(express.json());
 app.use(cors());
 
+// Serve the website from /public
+app.use(express.static(path.join(__dirname, "public")));
 
 // ==============================
 // API KEY AUTHENTICATION
@@ -44,7 +49,6 @@ function requireApiKey(req, res, next) {
 
   next();
 }
-
 
 // ==============================
 // BOOTSTRAP SECRET
@@ -68,19 +72,27 @@ function requireBootstrapSecret(req, res, next) {
   next();
 }
 
-
 // ==============================
-// HOME
+// HOME / WEBSITE
 // ==============================
 
 app.get("/", (req, res) => {
+  res.sendFile(
+    path.join(__dirname, "public", "index.html")
+  );
+});
+
+// ==============================
+// API STATUS
+// ==============================
+
+app.get("/api", (req, res) => {
   res.json({
     name: "My Payment Company API",
     status: "online",
     environment: "production"
   });
 });
-
 
 // ==============================
 // CREATE ACCOUNT
@@ -106,7 +118,6 @@ app.post("/accounts", (req, res) => {
     });
   }
 });
-
 
 // ==============================
 // GENERATE API KEY
@@ -141,7 +152,6 @@ app.post(
   }
 );
 
-
 // ==============================
 // GET ACCOUNT
 // ==============================
@@ -158,7 +168,6 @@ app.get("/accounts/:id", (req, res) => {
 
   res.json(account);
 });
-
 
 // ==============================
 // TRANSFER
@@ -224,7 +233,6 @@ app.post(
     }
   }
 );
-
 
 // ==============================
 // CREATE DEPOSIT
@@ -297,7 +305,6 @@ app.post(
   }
 );
 
-
 // ==============================
 // GET DEPOSIT
 // ==============================
@@ -362,7 +369,6 @@ app.get(
     }
   }
 );
-
 
 // ==============================
 // VERIFY DEPOSIT
@@ -434,7 +440,6 @@ app.post(
   }
 );
 
-
 // ==============================
 // CREATE PAYMENT REQUEST
 // ==============================
@@ -494,7 +499,6 @@ app.post(
   }
 );
 
-
 // ==============================
 // GET PAYMENT REQUEST
 // ==============================
@@ -544,7 +548,6 @@ app.get(
   }
 );
 
-
 // ==============================
 // COMPLETE PAYMENT
 // ==============================
@@ -568,7 +571,6 @@ app.post(
     }
   }
 );
-
 
 // ==============================
 // GET TRANSACTIONS
@@ -597,9 +599,10 @@ app.get(
       const transactions =
         ledger.transactions.filter(
           transaction => {
+
             if (
               transaction.type ===
-                "DEPOSIT"
+              "DEPOSIT"
             ) {
               return (
                 transaction.accountId ===
@@ -609,7 +612,7 @@ app.get(
 
             if (
               transaction.type ===
-                "TRANSFER"
+              "TRANSFER"
             ) {
               return (
                 transaction.from ===
@@ -621,7 +624,7 @@ app.get(
 
             if (
               transaction.type ===
-                "PAYMENT_REQUEST"
+              "PAYMENT_REQUEST"
             ) {
               return (
                 transaction.merchantId ===
@@ -646,7 +649,6 @@ app.get(
     }
   }
 );
-
 
 // ==============================
 // START SERVER
