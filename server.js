@@ -4,27 +4,86 @@ const {
   createAccount,
   getAccount,
   transfer,
-  addTestFunds,
+  createDeposit,
+  verifyDeposit,
   createPaymentRequest,
   completePayment
 } = require("./ledger");
+
+const {
+  generateApiKey,
+  authenticateApiKey
+} = require("./auth");
+
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 
 app.use(express.json());
 
 
-// Home
+// ==============================
+// API KEY AUTHENTICATION
+// ==============================
+
+function requireApiKey(req, res, next) {
+  const apiKey = req.headers["x-api-key"];
+
+  const auth = authenticateApiKey(apiKey);
+
+  if (!auth) {
+    return res.status(401).json({
+      error: "Invalid or missing API key"
+    });
+  }
+
+  req.auth = auth;
+
+  next();
+}
+
+
+// ==============================
+// BOOTSTRAP SECRET
+// ==============================
+
+function requireBootstrapSecret(req, res, next) {
+  const secret = req.headers["x-bootstrap-secret"];
+
+  if (!process.env.BOOTSTRAP_SECRET) {
+    return res.status(500).json({
+      error: "Bootstrap secret is not configured"
+    });
+  }
+
+  if (secret !== process.env.BOOTSTRAP_SECRET) {
+    return res.status(401).json({
+      error: "Invalid bootstrap secret"
+    });
+  }
+
+  next();
+}
+
+
+// ==============================
+// HOME
+// ==============================
+
 app.get("/", (req, res) => {
   res.json({
     name: "My Payment Company API",
     status: "online",
-    environment: "development"
+    environment: "production"
   });
 });
 
 
-// Create account
+// ==============================
+// CREATE ACCOUNT
+// ==============================
+
 app.post("/accounts", (req, res) => {
   try {
     const { owner } = req.body;
@@ -35,7 +94,10 @@ app.post("/accounts", (req, res) => {
       });
     }
 
-    res.status(201).json(createAccount(owner));
+    res.status(201).json(
+      createAccount(owner)
+    );
+
   } catch (error) {
     res.status(500).json({
       error: error.message
@@ -44,9 +106,47 @@ app.post("/accounts", (req, res) => {
 });
 
 
-// Get account
+// ==============================
+// GENERATE API KEY
+// ==============================
+
+app.post(
+  "/accounts/:id/api-key",
+  requireBootstrapSecret,
+  (req, res) => {
+    try {
+      const account = getAccount(req.params.id);
+
+      if (!account) {
+        return res.status(404).json({
+          error: "Account not found"
+        });
+      }
+
+      const apiKey =
+        generateApiKey(account.id);
+
+      return res.status(201).json({
+        accountId: account.id,
+        apiKey
+      });
+
+    } catch (error) {
+      return res.status(400).json({
+        error: error.message
+      });
+    }
+  }
+);
+
+
+// ==============================
+// GET ACCOUNT
+// ==============================
+
 app.get("/accounts/:id", (req, res) => {
-  const account = getAccount(req.params.id);
+  const account =
+    getAccount(req.params.id);
 
   if (!account) {
     return res.status(404).json({
@@ -58,202 +158,503 @@ app.get("/accounts/:id", (req, res) => {
 });
 
 
-// Add test funds
-app.post("/test-fund", (req, res) => {
-  try {
-    const { accountId, amount } = req.body;
+// ==============================
+// TRANSFER
+// ==============================
 
-    if (
-      !accountId ||
-      amount === undefined ||
-      amount === null ||
-      amount === ""
-    ) {
-      return res.status(400).json({
-        error: "accountId and amount are required"
+app.post(
+  "/transfers",
+  requireApiKey,
+  (req, res) => {
+    try {
+      const {
+        from,
+        to,
+        amount
+      } = req.body;
+
+      if (
+        !from ||
+        !to ||
+        amount === undefined ||
+        amount === null ||
+        amount === ""
+      ) {
+        return res.status(400).json({
+          error:
+            "from, to and amount are required"
+        });
+      }
+
+      if (
+        req.auth.accountId !== from
+      ) {
+        return res.status(403).json({
+          error:
+            "API key is not authorized for this account"
+        });
+      }
+
+      const amountMinor =
+        Math.round(Number(amount) * 100);
+
+      if (
+        !Number.isFinite(amountMinor) ||
+        amountMinor <= 0
+      ) {
+        return res.status(400).json({
+          error: "Invalid amount"
+        });
+      }
+
+      res.status(201).json(
+        transfer(
+          from,
+          to,
+          amountMinor
+        )
+      );
+
+    } catch (error) {
+      res.status(400).json({
+        error: error.message
       });
     }
-
-    const amountMinor = Math.round(Number(amount) * 100);
-
-    if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
-      return res.status(400).json({
-        error: "Invalid amount"
-      });
-    }
-
-    res.status(201).json(
-      addTestFunds(accountId, amountMinor)
-    );
-  } catch (error) {
-    res.status(400).json({
-      error: error.message
-    });
   }
-});
+);
 
 
-// Transfer money
-app.post("/transfers", (req, res) => {
-  try {
-    const { from, to, amount } = req.body;
+// ==============================
+// CREATE DEPOSIT
+// ==============================
 
-    if (
-      !from ||
-      !to ||
-      amount === undefined ||
-      amount === null ||
-      amount === ""
-    ) {
+app.post(
+  "/deposits",
+  requireApiKey,
+  (req, res) => {
+    try {
+      const {
+        accountId,
+        amount,
+        method,
+        reference
+      } = req.body;
+
+      if (
+        !accountId ||
+        amount === undefined ||
+        amount === null ||
+        amount === "" ||
+        !method ||
+        !reference
+      ) {
+        return res.status(400).json({
+          error:
+            "accountId, amount, method and reference are required"
+        });
+      }
+
+      if (
+        req.auth.accountId !== accountId
+      ) {
+        return res.status(403).json({
+          error:
+            "API key is not authorized for this account"
+        });
+      }
+
+      const amountMinor =
+        Math.round(Number(amount) * 100);
+
+      if (
+        !Number.isFinite(amountMinor) ||
+        amountMinor <= 0
+      ) {
+        return res.status(400).json({
+          error: "Invalid amount"
+        });
+      }
+
+      const deposit =
+        createDeposit(
+          accountId,
+          amountMinor,
+          method,
+          reference
+        );
+
+      return res.status(201).json(
+        deposit
+      );
+
+    } catch (error) {
       return res.status(400).json({
-        error: "from, to and amount are required"
+        error: error.message
       });
     }
+  }
+);
 
-    const amountMinor = Math.round(Number(amount) * 100);
 
-    if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+// ==============================
+// GET DEPOSIT
+// ==============================
+
+app.get(
+  "/deposits/:id",
+  requireApiKey,
+  (req, res) => {
+    try {
+      const file =
+        path.join(
+          __dirname,
+          "data",
+          "ledger.json"
+        );
+
+      if (!fs.existsSync(file)) {
+        return res.status(404).json({
+          error: "Deposit not found"
+        });
+      }
+
+      const ledger =
+        JSON.parse(
+          fs.readFileSync(
+            file,
+            "utf8"
+          )
+        );
+
+      const deposit =
+        ledger.transactions.find(
+          transaction =>
+            transaction.id ===
+              req.params.id &&
+            transaction.type ===
+              "DEPOSIT"
+        );
+
+      if (!deposit) {
+        return res.status(404).json({
+          error: "Deposit not found"
+        });
+      }
+
+      if (
+        deposit.accountId !==
+        req.auth.accountId
+      ) {
+        return res.status(403).json({
+          error:
+            "API key is not authorized for this deposit"
+        });
+      }
+
+      return res.json(deposit);
+
+    } catch (error) {
+      return res.status(500).json({
+        error: error.message
+      });
+    }
+  }
+);
+
+
+// ==============================
+// VERIFY DEPOSIT
+// ==============================
+
+app.post(
+  "/deposits/:id/verify",
+  requireApiKey,
+  (req, res) => {
+    try {
+      const file =
+        path.join(
+          __dirname,
+          "data",
+          "ledger.json"
+        );
+
+      if (!fs.existsSync(file)) {
+        return res.status(404).json({
+          error: "Deposit not found"
+        });
+      }
+
+      const ledger =
+        JSON.parse(
+          fs.readFileSync(
+            file,
+            "utf8"
+          )
+        );
+
+      const deposit =
+        ledger.transactions.find(
+          transaction =>
+            transaction.id ===
+              req.params.id &&
+            transaction.type ===
+              "DEPOSIT"
+        );
+
+      if (!deposit) {
+        return res.status(404).json({
+          error: "Deposit not found"
+        });
+      }
+
+      if (
+        deposit.accountId !==
+        req.auth.accountId
+      ) {
+        return res.status(403).json({
+          error:
+            "API key is not authorized for this deposit"
+        });
+      }
+
+      const verified =
+        verifyDeposit(
+          req.params.id
+        );
+
+      return res.json(verified);
+
+    } catch (error) {
       return res.status(400).json({
-        error: "Invalid amount"
+        error: error.message
       });
     }
-
-    res.status(201).json(
-      transfer(from, to, amountMinor)
-    );
-  } catch (error) {
-    res.status(400).json({
-      error: error.message
-    });
   }
-});
+);
 
 
-// Create payment request
-app.post("/payment-requests", (req, res) => {
-  try {
-    const {
-      merchantId,
-      customerId,
-      amount
-    } = req.body;
+// ==============================
+// CREATE PAYMENT REQUEST
+// ==============================
 
-    if (
-      !merchantId ||
-      !customerId ||
-      amount === undefined ||
-      amount === null ||
-      amount === ""
-    ) {
+app.post(
+  "/payment-requests",
+  requireApiKey,
+  (req, res) => {
+    try {
+      const {
+        merchantId,
+        customerId,
+        amount
+      } = req.body;
+
+      if (
+        !merchantId ||
+        !customerId ||
+        amount === undefined ||
+        amount === null ||
+        amount === ""
+      ) {
+        return res.status(400).json({
+          error:
+            "merchantId, customerId and amount are required"
+        });
+      }
+
+      const amountMinor =
+        Math.round(Number(amount) * 100);
+
+      if (
+        !Number.isFinite(amountMinor) ||
+        amountMinor <= 0
+      ) {
+        return res.status(400).json({
+          error: "Invalid amount"
+        });
+      }
+
+      const payment =
+        createPaymentRequest(
+          merchantId,
+          customerId,
+          amountMinor
+        );
+
+      return res.status(201).json(
+        payment
+      );
+
+    } catch (error) {
       return res.status(400).json({
-        error: "merchantId, customerId and amount are required"
+        error: error.message
       });
     }
+  }
+);
 
-    const amountMinor = Math.round(Number(amount) * 100);
 
-    if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+// ==============================
+// GET PAYMENT REQUEST
+// ==============================
+
+app.get(
+  "/payment-requests/:id",
+  (req, res) => {
+    try {
+      const file =
+        path.join(
+          __dirname,
+          "data",
+          "ledger.json"
+        );
+
+      const ledger =
+        JSON.parse(
+          fs.readFileSync(
+            file,
+            "utf8"
+          )
+        );
+
+      const payment =
+        ledger.transactions.find(
+          transaction =>
+            transaction.id ===
+              req.params.id &&
+            transaction.type ===
+              "PAYMENT_REQUEST"
+        );
+
+      if (!payment) {
+        return res.status(404).json({
+          error:
+            "Payment request not found"
+        });
+      }
+
+      return res.json(payment);
+
+    } catch (error) {
+      return res.status(500).json({
+        error: error.message
+      });
+    }
+  }
+);
+
+
+// ==============================
+// COMPLETE PAYMENT
+// ==============================
+
+app.post(
+  "/payment-requests/:id/complete",
+  requireApiKey,
+  (req, res) => {
+    try {
+      const payment =
+        completePayment(
+          req.params.id
+        );
+
+      return res.json(payment);
+
+    } catch (error) {
       return res.status(400).json({
-        error: "Invalid amount"
+        error: error.message
       });
     }
-
-    const payment = createPaymentRequest(
-      merchantId,
-      customerId,
-      amountMinor
-    );
-
-    return res.status(201).json(payment);
-
-  } catch (error) {
-    return res.status(400).json({
-      error: error.message
-    });
   }
-});
+);
 
 
-// Get payment request
-app.get("/payment-requests/:id", (req, res) => {
-  try {
-    const fs = require("fs");
-    const path = require("path");
+// ==============================
+// GET TRANSACTIONS
+// ==============================
 
-    const file = path.join(
-      __dirname,
-      "data",
-      "ledger.json"
-    );
+app.get(
+  "/transactions",
+  requireApiKey,
+  (req, res) => {
+    try {
+      const file =
+        path.join(
+          __dirname,
+          "data",
+          "ledger.json"
+        );
 
-    const ledger = JSON.parse(
-      fs.readFileSync(file, "utf8")
-    );
+      const ledger =
+        JSON.parse(
+          fs.readFileSync(
+            file,
+            "utf8"
+          )
+        );
 
-    const payment = ledger.transactions.find(
-      transaction =>
-        transaction.id === req.params.id &&
-        transaction.type === "PAYMENT_REQUEST"
-    );
+      const transactions =
+        ledger.transactions.filter(
+          transaction => {
+            if (
+              transaction.type ===
+                "DEPOSIT"
+            ) {
+              return (
+                transaction.accountId ===
+                req.auth.accountId
+              );
+            }
 
-    if (!payment) {
-      return res.status(404).json({
-        error: "Payment request not found"
+            if (
+              transaction.type ===
+                "TRANSFER"
+            ) {
+              return (
+                transaction.from ===
+                  req.auth.accountId ||
+                transaction.to ===
+                  req.auth.accountId
+              );
+            }
+
+            if (
+              transaction.type ===
+                "PAYMENT_REQUEST"
+            ) {
+              return (
+                transaction.merchantId ===
+                  req.auth.accountId ||
+                transaction.customerId ===
+                  req.auth.accountId
+              );
+            }
+
+            return false;
+          }
+        );
+
+      return res.json(
+        transactions
+      );
+
+    } catch (error) {
+      return res.status(500).json({
+        error: error.message
       });
     }
-
-    return res.json(payment);
-
-  } catch (error) {
-    return res.status(500).json({
-      error: error.message
-    });
   }
-});
-// Complete payment request
-app.post("/payment-requests/:id/complete", (req, res) => {
-  try {
-    const payment = completePayment(req.params.id);
-
-    return res.json(payment);
-
-  } catch (error) {
-    return res.status(400).json({
-      error: error.message
-    });
-  }
-});
+);
 
 
-// Get all transactions
-app.get("/transactions", (req, res) => {
-  try {
-    const fs = require("fs");
-    const path = require("path");
+// ==============================
+// START SERVER
+// ==============================
 
-    const file = path.join(
-      __dirname,
-      "data",
-      "ledger.json"
-    );
+const PORT =
+  process.env.PORT || 3000;
 
-    const ledger = JSON.parse(
-      fs.readFileSync(file, "utf8")
-    );
-
-    res.json(ledger.transactions);
-
-  } catch (error) {
-    res.status(500).json({
-      error: error.message
-    });
-  }
-});
-
-
-// Start server
-app.listen(process.env.PORT || 3000, () => {
+app.listen(PORT, () => {
   console.log(
-    "Payment API running on http://localhost:3000"
+    `Payment API running on port ${PORT}`
   );
 });

@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -7,25 +8,109 @@ function loadLedger() {
   if (!fs.existsSync(file)) {
     return {
       accounts: [],
-      transactions: []
+      transactions: [],
+      apiKeys: []
     };
   }
 
-  return JSON.parse(fs.readFileSync(file, "utf8"));
+  const ledger = JSON.parse(fs.readFileSync(file, "utf8"));
+
+  if (!Array.isArray(ledger.accounts)) {
+    ledger.accounts = [];
+  }
+
+  if (!Array.isArray(ledger.transactions)) {
+    ledger.transactions = [];
+  }
+
+  if (!Array.isArray(ledger.apiKeys)) {
+    ledger.apiKeys = [];
+  }
+
+  return ledger;
 }
 
-function saveLedger(data) {
+function saveLedger(ledger) {
+  const directory = path.dirname(file);
+
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
   fs.writeFileSync(
     file,
-    JSON.stringify(data, null, 2)
+    JSON.stringify(ledger, null, 2)
   );
 }
+
+
+// ==============================
+// API KEYS
+// ==============================
+
+function generateApiKey(accountId) {
+  const ledger = loadLedger();
+
+  const account = ledger.accounts.find(
+    account => account.id === accountId
+  );
+
+  if (!account) {
+    throw new Error("Account not found");
+  }
+
+  const rawKey =
+    "pk_" + crypto.randomBytes(32).toString("hex");
+
+  const keyHash = crypto
+    .createHash("sha256")
+    .update(rawKey)
+    .digest("hex");
+
+  ledger.apiKeys.push({
+    keyHash,
+    accountId,
+    createdAt: new Date().toISOString()
+  });
+
+  saveLedger(ledger);
+
+  return rawKey;
+}
+
+function authenticateApiKey(rawKey) {
+  if (!rawKey) {
+    return null;
+  }
+
+  const ledger = loadLedger();
+
+  const keyHash = crypto
+    .createHash("sha256")
+    .update(rawKey)
+    .digest("hex");
+
+  const record = ledger.apiKeys.find(
+    key => key.keyHash === keyHash
+  );
+
+  if (!record) {
+    return null;
+  }
+
+  return record;
+}
+
+
+// ==============================
+// ACCOUNTS
+// ==============================
 
 function createAccount(owner) {
   const ledger = loadLedger();
 
   const account = {
-    id: "ACC-" + Date.now(),
+    id: "ACC-" + crypto.randomUUID(),
     owner,
     currency: "KES",
     balanceMinor: 0,
@@ -33,6 +118,7 @@ function createAccount(owner) {
   };
 
   ledger.accounts.push(account);
+
   saveLedger(ledger);
 
   return account;
@@ -46,39 +132,10 @@ function getAccount(id) {
   );
 }
 
-function addTestFunds(accountId, amountMinor) {
-  const ledger = loadLedger();
 
-  const account = ledger.accounts.find(
-    account => account.id === accountId
-  );
-
-  if (!account) {
-    throw new Error("Account not found");
-  }
-
-  if (!Number.isInteger(amountMinor) || amountMinor <= 0) {
-    throw new Error("Invalid amount");
-  }
-
-  account.balanceMinor += amountMinor;
-
-  const transaction = {
-    id: "TEST-" + Date.now(),
-    type: "TEST_FUNDING",
-    account: accountId,
-    amountMinor,
-    currency: "KES",
-    status: "SUCCESS",
-    createdAt: new Date().toISOString()
-  };
-
-  ledger.transactions.push(transaction);
-
-  saveLedger(ledger);
-
-  return transaction;
-}
+// ==============================
+// TRANSFERS
+// ==============================
 
 function transfer(fromId, toId, amountMinor) {
   const ledger = loadLedger();
@@ -95,6 +152,10 @@ function transfer(fromId, toId, amountMinor) {
     throw new Error("Account not found");
   }
 
+  if (fromId === toId) {
+    throw new Error("Cannot transfer to the same account");
+  }
+
   if (!Number.isInteger(amountMinor) || amountMinor <= 0) {
     throw new Error("Invalid amount");
   }
@@ -107,7 +168,7 @@ function transfer(fromId, toId, amountMinor) {
   to.balanceMinor += amountMinor;
 
   const transaction = {
-    id: "TX-" + Date.now(),
+    id: "TX-" + crypto.randomUUID(),
     type: "TRANSFER",
     from: fromId,
     to: toId,
@@ -123,7 +184,141 @@ function transfer(fromId, toId, amountMinor) {
 
   return transaction;
 }
-function createPaymentRequest(merchantId, customerId, amountMinor) {
+
+
+// ==============================
+// DEPOSITS
+// ==============================
+
+function createDeposit(
+  accountId,
+  amountMinor,
+  method,
+  reference
+) {
+  const ledger = loadLedger();
+
+  const account = ledger.accounts.find(
+    account => account.id === accountId
+  );
+
+  if (!account) {
+    throw new Error("Account not found");
+  }
+
+  if (
+    !Number.isInteger(amountMinor) ||
+    amountMinor <= 0
+  ) {
+    throw new Error("Invalid amount");
+  }
+
+  const allowedMethods = [
+    "BANK",
+    "CARD",
+    "MOBILE_MONEY",
+    "CASH"
+  ];
+
+  if (!allowedMethods.includes(method)) {
+    throw new Error(
+      "Invalid deposit method"
+    );
+  }
+
+  if (!reference || typeof reference !== "string") {
+    throw new Error(
+      "Deposit reference is required"
+    );
+  }
+
+  const existingReference =
+    ledger.transactions.find(
+      transaction =>
+        transaction.type === "DEPOSIT" &&
+        transaction.reference === reference
+    );
+
+  if (existingReference) {
+    throw new Error(
+      "Deposit reference already exists"
+    );
+  }
+
+  const deposit = {
+    id: "DEP-" + crypto.randomUUID(),
+    type: "DEPOSIT",
+    accountId,
+    amountMinor,
+    currency: "KES",
+    method,
+    reference,
+    status: "PENDING",
+    createdAt: new Date().toISOString()
+  };
+
+  ledger.transactions.push(deposit);
+
+  saveLedger(ledger);
+
+  return deposit;
+}
+
+
+// ==============================
+// VERIFY DEPOSIT
+// ==============================
+
+function verifyDeposit(depositId) {
+  const ledger = loadLedger();
+
+  const deposit = ledger.transactions.find(
+    transaction =>
+      transaction.id === depositId &&
+      transaction.type === "DEPOSIT"
+  );
+
+  if (!deposit) {
+    throw new Error("Deposit not found");
+  }
+
+  if (deposit.status !== "PENDING") {
+    throw new Error(
+      "Deposit is not pending"
+    );
+  }
+
+  const account = ledger.accounts.find(
+    account =>
+      account.id === deposit.accountId
+  );
+
+  if (!account) {
+    throw new Error("Account not found");
+  }
+
+  account.balanceMinor += deposit.amountMinor;
+
+  deposit.status = "SUCCESS";
+
+  deposit.verifiedAt =
+    new Date().toISOString();
+
+  saveLedger(ledger);
+
+  return deposit;
+}
+
+
+// ==============================
+// PAYMENT REQUESTS
+// ==============================
+
+function createPaymentRequest(
+  merchantId,
+  customerId,
+  amountMinor
+) {
   const ledger = loadLedger();
 
   const merchant = ledger.accounts.find(
@@ -138,27 +333,32 @@ function createPaymentRequest(merchantId, customerId, amountMinor) {
     throw new Error("Account not found");
   }
 
-  if (!Number.isInteger(amountMinor) || amountMinor <= 0) {
+  if (
+    !Number.isInteger(amountMinor) ||
+    amountMinor <= 0
+  ) {
     throw new Error("Invalid amount");
   }
 
   const payment = {
-   id: "PAY-" + Date.now(),
- type: "PAYMENT_REQUEST",
-   merchantId,
+    id: "PAY-" + crypto.randomUUID(),
+    type: "PAYMENT_REQUEST",
+    merchantId,
     customerId,
-    
-amountMinor,
+    amountMinor,
     currency: "KES",
     status: "PENDING",
     createdAt: new Date().toISOString()
   };
 
   ledger.transactions.push(payment);
+
   saveLedger(ledger);
 
   return payment;
 }
+
+
 function completePayment(paymentId) {
   const ledger = loadLedger();
 
@@ -169,44 +369,65 @@ function completePayment(paymentId) {
   );
 
   if (!payment) {
-    throw new Error("Payment request not found");
+    throw new Error(
+      "Payment request not found"
+    );
   }
 
   if (payment.status !== "PENDING") {
-    throw new Error("Payment is not pending");
+    throw new Error(
+      "Payment is not pending"
+    );
   }
 
   const customer = ledger.accounts.find(
-    account => account.id === payment.customerId
+    account =>
+      account.id === payment.customerId
   );
 
   const merchant = ledger.accounts.find(
-    account => account.id === payment.merchantId
+    account =>
+      account.id === payment.merchantId
   );
 
   if (!customer || !merchant) {
     throw new Error("Account not found");
   }
 
-  if (customer.balanceMinor < payment.amountMinor) {
-    throw new Error("Insufficient customer balance");
+  if (
+    customer.balanceMinor <
+    payment.amountMinor
+  ) {
+    throw new Error(
+      "Insufficient customer balance"
+    );
   }
 
-  customer.balanceMinor -= payment.amountMinor;
-  merchant.balanceMinor += payment.amountMinor;
+  customer.balanceMinor -=
+    payment.amountMinor;
+
+  merchant.balanceMinor +=
+    payment.amountMinor;
 
   payment.status = "SUCCESS";
-  payment.completedAt = new Date().toISOString();
+
+  payment.completedAt =
+    new Date().toISOString();
 
   saveLedger(ledger);
 
   return payment;
 }
+
+
 module.exports = {
+  generateApiKey,
+  authenticateApiKey,
   createAccount,
   getAccount,
-  addTestFunds,
   transfer,
+  createDeposit,
+  verifyDeposit,
   createPaymentRequest,
   completePayment
 };
