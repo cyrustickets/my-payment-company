@@ -1,8 +1,12 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
 
   <title>My Payment Company</title>
 
@@ -54,7 +58,7 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 40px;
-      align-items: center;
+      align-items: start;
     }
 
     .hero h1 {
@@ -78,6 +82,7 @@
       border-radius: 9px;
       font-size: 16px;
       font-weight: bold;
+      cursor: pointer;
     }
 
     .card {
@@ -109,6 +114,62 @@
       border-radius: 10px;
       background: #f9fafb;
       font-weight: bold;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .action:hover {
+      background: #eef2f7;
+    }
+
+    .send-money {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .send-money h3 {
+      margin-bottom: 16px;
+    }
+
+    .send-money label {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    .send-money input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #d0d5dd;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      font-size: 16px;
+    }
+
+    .send-button {
+      width: 100%;
+      border: 0;
+      background: #111827;
+      color: white;
+      padding: 13px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .send-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .note {
+      margin-top: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #667085;
     }
 
     .features {
@@ -164,7 +225,7 @@
   <header>
     <div class="nav">
       <div class="logo">My Payment Company</div>
-      <button>Sign In</button>
+      <button id="signInButton">Sign In</button>
     </div>
   </header>
 
@@ -186,6 +247,7 @@
       </div>
 
       <div class="card">
+
         <h2>Wallet</h2>
 
         <div class="balance">
@@ -198,6 +260,49 @@
           <div class="action">Request Payment</div>
           <div class="action">Transactions</div>
         </div>
+
+        <div class="send-money">
+          <h3>Send Money to Safaricom</h3>
+
+          <label for="safaricomPhone">
+            Safaricom Number
+          </label>
+
+          <input
+            id="safaricomPhone"
+            type="tel"
+            inputmode="numeric"
+            placeholder="0712345678"
+            maxlength="13"
+          >
+
+          <label for="safaricomAmount">
+            Amount (KSh)
+          </label>
+
+          <input
+            id="safaricomAmount"
+            type="number"
+            min="1"
+            step="0.01"
+            placeholder="100"
+          >
+
+          <button
+            id="sendSafaricomButton"
+            class="send-button"
+          >
+            Send Money
+          </button>
+
+          <div class="note">
+            This sends a withdrawal request through your
+            My Payment Company system. It does not claim
+            that the money has reached M-PESA until a real
+            authorized M-PESA connection confirms it.
+          </div>
+        </div>
+
       </div>
 
     </section>
@@ -207,24 +312,24 @@
       <div class="feature">
         <h3>Secure</h3>
         <p>
-          API-key authentication and controlled account access
-          protect payment operations.
+          API-key authentication and controlled account
+          access protect payment operations.
         </p>
       </div>
 
       <div class="feature">
         <h3>Fast Payments</h3>
         <p>
-          Create payment requests and transfer funds through
-          a simple payment API.
+          Create payment requests and transfer funds
+          through a simple payment API.
         </p>
       </div>
 
       <div class="feature">
         <h3>Track Everything</h3>
         <p>
-          Keep your deposits, transfers and payment activity
-          organized in your transaction history.
+          Keep your deposits, transfers and payment
+          activity organized in your transaction history.
         </p>
       </div>
 
@@ -236,7 +341,7 @@
     © 2026 My Payment Company
   </footer>
 
-<script src="/app.js"></script>
+  <script src="/app.js"></script>
+
 </body>
 </html>
-
