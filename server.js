@@ -13,7 +13,8 @@ const {
   createPaymentRequest,
   getPaymentRequest,
   completePayment,
-  getTransactions
+  getTransactions,
+  createCardPayment
 } = require("./ledger");
 
 const {
@@ -747,6 +748,86 @@ app.post(
     } catch (error) {
       console.error(
         "SAFARICOM WITHDRAWAL ERROR:",
+        error
+      );
+
+      return res.status(400).json({
+        error: error.message
+      });
+    }
+  }
+);
+
+
+// ========================================
+// CARD PAYMENTS
+// ========================================
+
+app.post(
+  "/card-payments",
+  requireApiKey,
+  async (req, res) => {
+    try {
+      const {
+        accountId,
+        amount,
+        cardNumber,
+        expiry,
+        cvv
+      } = req.body;
+
+      if (
+        !accountId ||
+        amount === undefined ||
+        amount === null ||
+        amount === "" ||
+        !cardNumber ||
+        !expiry ||
+        !cvv
+      ) {
+        return res.status(400).json({
+          error:
+            "accountId, amount, cardNumber, expiry and cvv are required"
+        });
+      }
+
+      if (
+        req.auth.accountId !== accountId
+      ) {
+        return res.status(403).json({
+          error:
+            "API key is not authorized for this account"
+        });
+      }
+
+      const amountMinor =
+        Math.round(
+          Number(amount) * 100
+        );
+
+      if (
+        !Number.isSafeInteger(amountMinor) ||
+        amountMinor <= 0
+      ) {
+        return res.status(400).json({
+          error: "Invalid amount"
+        });
+      }
+
+      const payment =
+        await createCardPayment(
+          accountId,
+          amountMinor,
+          cardNumber,
+          expiry,
+          cvv
+        );
+
+      return res.status(201).json(payment);
+
+    } catch (error) {
+      console.error(
+        "CARD PAYMENT ERROR:",
         error
       );
 

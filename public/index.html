@@ -1,12 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <title>My Payment Company</title>
 
@@ -58,7 +54,7 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 40px;
-      align-items: start;
+      align-items: center;
     }
 
     .hero h1 {
@@ -82,7 +78,6 @@
       border-radius: 9px;
       font-size: 16px;
       font-weight: bold;
-      cursor: pointer;
     }
 
     .card {
@@ -114,62 +109,6 @@
       border-radius: 10px;
       background: #f9fafb;
       font-weight: bold;
-      cursor: pointer;
-      text-align: center;
-    }
-
-    .action:hover {
-      background: #eef2f7;
-    }
-
-    .send-money {
-      margin-top: 24px;
-      padding-top: 24px;
-      border-top: 1px solid #e5e7eb;
-    }
-
-    .send-money h3 {
-      margin-bottom: 16px;
-    }
-
-    .send-money label {
-      display: block;
-      margin-bottom: 7px;
-      font-size: 14px;
-      font-weight: bold;
-    }
-
-    .send-money input {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid #d0d5dd;
-      border-radius: 8px;
-      margin-bottom: 15px;
-      font-size: 16px;
-    }
-
-    .send-button {
-      width: 100%;
-      border: 0;
-      background: #111827;
-      color: white;
-      padding: 13px;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
-    .send-button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .note {
-      margin-top: 12px;
-      font-size: 13px;
-      line-height: 1.5;
-      color: #667085;
     }
 
     .features {
@@ -217,6 +156,111 @@
         grid-template-columns: 1fr;
       }
     }
+
+    .pay-card {
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      border: 0;
+      border-radius: 9px;
+      background: #111827;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 1000;
+    }
+
+    .modal.show { display: flex; }
+
+    .payment-box {
+      width: 100%;
+      max-width: 430px;
+      background: white;
+      border-radius: 18px;
+      padding: 28px;
+    }
+
+    .payment-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .close {
+      border: 0;
+      background: transparent;
+      font-size: 26px;
+      cursor: pointer;
+    }
+
+    .secure-label {
+      background: #fff7ed;
+      color: #9a3412;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 18px;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .payment-amount {
+      font-size: 30px;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+
+    .field { margin-bottom: 16px; }
+
+    .field label {
+      display: block;
+      margin-bottom: 7px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .field input {
+      width: 100%;
+      padding: 13px;
+      border: 1px solid #d1d5db;
+      border-radius: 9px;
+      font-size: 16px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .submit-payment {
+      width: 100%;
+      padding: 15px;
+      border: 0;
+      border-radius: 9px;
+      background: #111827;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .result {
+      display: none;
+      text-align: center;
+      line-height: 1.6;
+    }
+
   </style>
 </head>
 
@@ -225,7 +269,7 @@
   <header>
     <div class="nav">
       <div class="logo">My Payment Company</div>
-      <button id="signInButton">Sign In</button>
+      <button>Sign In</button>
     </div>
   </header>
 
@@ -247,7 +291,6 @@
       </div>
 
       <div class="card">
-
         <h2>Wallet</h2>
 
         <div class="balance">
@@ -259,50 +302,25 @@
           <div class="action">Transfer</div>
           <div class="action">Request Payment</div>
           <div class="action">Transactions</div>
+      </div>
+
+      <button id="payCardButton" style="
+        width:100%;
+        margin-top:20px;
+        padding:14px;
+        border:0;
+        border-radius:9px;
+        background:#111827;
+        color:white;
+        font-size:16px;
+        font-weight:bold;
+        cursor:pointer;">
+        Pay by Card
+      </button>
+      </div>
+      <button class="pay-card" onclick="openCardPayment()">Pay by Card</button>
+
         </div>
-
-        <div class="send-money">
-          <h3>Send Money to Safaricom</h3>
-
-          <label for="safaricomPhone">
-            Safaricom Number
-          </label>
-
-          <input
-            id="safaricomPhone"
-            type="tel"
-            inputmode="numeric"
-            placeholder="0712345678"
-            maxlength="13"
-          >
-
-          <label for="safaricomAmount">
-            Amount (KSh)
-          </label>
-
-          <input
-            id="safaricomAmount"
-            type="number"
-            min="1"
-            step="0.01"
-            placeholder="100"
-          >
-
-          <button
-            id="sendSafaricomButton"
-            class="send-button"
-          >
-            Send Money
-          </button>
-
-          <div class="note">
-            This sends a withdrawal request through your
-            My Payment Company system. It does not claim
-            that the money has reached M-PESA until a real
-            authorized M-PESA connection confirms it.
-          </div>
-        </div>
-
       </div>
 
     </section>
@@ -312,36 +330,215 @@
       <div class="feature">
         <h3>Secure</h3>
         <p>
-          API-key authentication and controlled account
-          access protect payment operations.
+          API-key authentication and controlled account access
+          protect payment operations.
         </p>
       </div>
 
       <div class="feature">
         <h3>Fast Payments</h3>
         <p>
-          Create payment requests and transfer funds
-          through a simple payment API.
+          Create payment requests and transfer funds through
+          a simple payment API.
         </p>
       </div>
 
       <div class="feature">
         <h3>Track Everything</h3>
         <p>
-          Keep your deposits, transfers and payment
-          activity organized in your transaction history.
+          Keep your deposits, transfers and payment activity
+          organized in your transaction history.
         </p>
       </div>
 
     </section>
 
-  </main>
+
+<div class="modal" id="cardModal">
+  <div class="payment-box">
+
+    <div class="payment-header">
+      <h2>Card Payment</h2>
+      <button class="close" onclick="closeCardPayment()">×</button>
+    </div>
+
+    <div class="secure-label">
+      Secure card payment
+    </div>
+
+    <div class="payment-amount">KSh 1,000.00</div>
+
+    <div id="paymentForm">
+
+      <div class="field">
+        <label>Cardholder name</label>
+        <input id="cardName" type="text" placeholder="John Doe">
+      </div>
+
+      <div class="field">
+        <label>Card number</label>
+        <input id="cardNumber" inputmode="numeric"
+               maxlength="19"
+               placeholder="4111 1111 1111 1111">
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Expiry</label>
+          <input id="cardExpiry" maxlength="5" placeholder="12/30">
+        </div>
+
+        <div class="field">
+          <label>CVV</label>
+          <input id="cardCvv" maxlength="3"
+                 inputmode="numeric"
+                 placeholder="123">
+        </div>
+      </div>
+
+      <button class="submit-payment"
+              onclick="processCardPayment()">
+        Pay KSh 1,000.00
+      </button>
+
+    </div>
+
+    <div class="result" id="paymentResult"></div>
+
+  </div>
+</div>
+
+</main>
 
   <footer>
     © 2026 My Payment Company
   </footer>
 
-  <script src="/app.js"></script>
+
+<script>
+async function processCardPayment() {
+  const name =
+    document.getElementById("cardName").value.trim();
+
+  const number =
+    document.getElementById("cardNumber")
+      .value.replace(/\s/g, "");
+
+  const expiry =
+    document.getElementById("cardExpiry")
+      .value.trim();
+
+  const cvv =
+    document.getElementById("cardCvv")
+      .value.trim();
+
+  if (!name) {
+    alert("Enter the cardholder name.");
+    return;
+  }
+
+  if (number !== "4111111111111111") {
+    alert("Card not recognized. Use the test card number.");
+    return;
+  }
+
+  if (!/^\d{2}\/\d{2}$/.test(expiry)) {
+    alert("Enter expiry as MM/YY.");
+    return;
+  }
+
+  if (!/^\d{3}$/.test(cvv)) {
+    alert("Enter a 3-digit CVV.");
+    return;
+  }
+
+  const accountId =
+    prompt("Enter the receiving Account ID:");
+
+  if (!accountId) {
+    return;
+  }
+
+  const apiKey =
+    prompt("Enter the account API key:");
+
+  if (!apiKey) {
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      "https://my-payment-company-1.onrender.com/card-payments",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey.trim()
+        },
+        body: JSON.stringify({
+          accountId: accountId.trim(),
+          amount: 1000,
+          cardNumber: number,
+          expiry,
+          cvv
+        })
+      }
+    );
+
+    const data =
+      await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        data.error || "Card payment failed"
+      );
+    }
+
+    document.getElementById("paymentForm")
+      .style.display = "none";
+
+    const result =
+      document.getElementById("paymentResult");
+
+    result.style.display = "block";
+
+    result.innerHTML = `
+      <h3>✓ Payment Successful</h3>
+      <p>
+        Card payment approved.<br><br>
+        Amount:
+        <strong>KSh 1,000.00</strong><br>
+        Transaction:
+        <strong>${data.id}</strong><br>
+        Status:
+        <strong>${data.status}</strong><br>
+        Card:
+        <strong>****${data.cardLast4}</strong>
+      </p>
+    `;
+
+  } catch (error) {
+    alert(
+      "Card payment failed:\n" +
+      error.message
+    );
+  }
+}
+
+function openCardPayment() {
+  document
+    .getElementById("cardModal")
+    .classList.add("show");
+}
+
+function closeCardPayment() {
+  document
+    .getElementById("cardModal")
+    .classList.remove("show");
+}
+</script>
+
+<script src="/app.js"></script>
 
 </body>
 </html>
