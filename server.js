@@ -124,6 +124,36 @@ function requireBootstrapSecret(
 }
 
 
+
+// ========================================
+// OWNER DASHBOARD AUTHENTICATION
+// ========================================
+
+function requireOwnerSecret(req, res, next) {
+  const secret =
+    req.headers["x-owner-secret"];
+
+  if (!process.env.OWNER_DASHBOARD_SECRET) {
+    return res.status(500).json({
+      error:
+        "Owner dashboard secret is not configured"
+    });
+  }
+
+  if (
+    secret !==
+    process.env.OWNER_DASHBOARD_SECRET
+  ) {
+    return res.status(401).json({
+      error:
+        "Invalid owner dashboard secret"
+    });
+  }
+
+  next();
+}
+
+
 // ========================================
 // API STATUS
 // ========================================
@@ -889,6 +919,36 @@ app.post(
       );
 
       return res.status(400).json({
+        error: error.message
+      });
+    }
+  }
+);
+
+
+// ========================================
+// OWNER DASHBOARD
+// ========================================
+
+app.get(
+  "/owner/payments",
+  requireOwnerSecret,
+  async (req, res) => {
+    try {
+      const payments =
+        await getTransactions();
+
+      return res.json({
+        payments
+      });
+
+    } catch (error) {
+      console.error(
+        "OWNER PAYMENTS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
         error: error.message
       });
     }
