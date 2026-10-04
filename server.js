@@ -763,6 +763,60 @@ app.post(
 
 
 // ========================================
+// PUBLIC CARD CHECKOUT
+// ========================================
+
+app.post(
+  "/checkout/card",
+  async (req, res) => {
+    try {
+      if (!RECEIVING_ACCOUNT_ID) {
+        return res.status(500).json({
+          error: "Receiving account is not configured"
+        });
+      }
+
+      const {
+        amount,
+        cardNumber,
+        expiry,
+        cvv
+      } = req.body;
+
+      if (
+        amount === undefined ||
+        amount === null ||
+        amount === "" ||
+        !cardNumber ||
+        !expiry ||
+        !cvv
+      ) {
+        return res.status(400).json({
+          error:
+            "amount, cardNumber, expiry and cvv are required"
+        });
+      }
+
+      return res.status(501).json({
+        error:
+          "Card authorization is not configured yet"
+      });
+
+    } catch (error) {
+      console.error(
+        "PUBLIC CARD CHECKOUT ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        error: "Checkout unavailable"
+      });
+    }
+  }
+);
+
+
+// ========================================
 // CARD PAYMENTS
 // ========================================
 
