@@ -14,8 +14,7 @@ const {
   getPaymentRequest,
   completePayment,
   getTransactions,
-  createCardPayment,
-  getCardPayments
+  createCardPayment
 } = require("./ledger");
 
 const {
@@ -27,22 +26,10 @@ const {
   createSafaricomWithdrawal
 } = require("./withdrawal");
 
-const CHECKOUT_ACCOUNT_ID =
-  process.env.CHECKOUT_ACCOUNT_ID ||
-  "ACC-f69fa18d-6dd9-4e0f-a204-856e43e3ff83";
-
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-
-app.get("/admin", (req, res) => {
-  res.sendFile(
-    path.join(__dirname, "public", "admin.html")
-  );
-});
-
-
 
 
 // ========================================
@@ -846,120 +833,6 @@ app.post(
 
       return res.status(400).json({
         error: error.message
-      });
-    }
-  }
-);
-
-
-// ========================================
-// PUBLIC CARD CHECKOUT
-// ========================================
-
-app.post(
-  "/checkout/card",
-  async (req, res) => {
-    try {
-      const {
-        amount,
-        cardNumber,
-        expiry,
-        cvv
-      } = req.body;
-
-      if (
-        amount === undefined ||
-        amount === null ||
-        amount === "" ||
-        !cardNumber ||
-        !expiry ||
-        !cvv
-      ) {
-        return res.status(400).json({
-          error:
-            "amount, cardNumber, expiry and cvv are required"
-        });
-      }
-
-      const amountMinor =
-        Math.round(
-          Number(amount) * 100
-        );
-
-      if (
-        !Number.isSafeInteger(amountMinor) ||
-        amountMinor <= 0
-      ) {
-        return res.status(400).json({
-          error: "Invalid amount"
-        });
-      }
-
-      const payment =
-        await createCardPayment(
-          CHECKOUT_ACCOUNT_ID,
-          amountMinor,
-          cardNumber,
-          expiry,
-          cvv
-        );
-
-      return res.status(201).json(payment);
-
-    } catch (error) {
-      console.error(
-        "PUBLIC CARD CHECKOUT ERROR:",
-        error
-      );
-
-      return res.status(400).json({
-        error: error.message
-      });
-    }
-  }
-);
-
-
-// ========================================
-// OWNER PAYMENT DASHBOARD API
-// ========================================
-
-app.get(
-  "/owner/payments",
-  async (req, res) => {
-    try {
-      const suppliedSecret =
-        req.headers["x-owner-secret"];
-
-      const ownerSecret =
-        process.env.OWNER_DASHBOARD_SECRET;
-
-      if (
-        !ownerSecret ||
-        !suppliedSecret ||
-        suppliedSecret !== ownerSecret
-      ) {
-        return res.status(401).json({
-          error: "Unauthorized"
-        });
-      }
-
-      const payments =
-        await getCardPayments();
-
-      return res.json({
-        count: payments.length,
-        payments
-      });
-
-    } catch (error) {
-      console.error(
-        "OWNER PAYMENTS ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        error: "Unable to load payments"
       });
     }
   }
