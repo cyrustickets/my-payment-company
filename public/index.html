@@ -1,134 +1,425 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>My Payment Company</title>
-<style>
-*{box-sizing:border-box}
-body{margin:0;font-family:Arial,sans-serif;background:#f5f7fa;color:#17202a}
-header{background:#111827;color:white;padding:20px;text-align:center}
-.container{max-width:700px;margin:40px auto;padding:20px}
-.card{background:white;border-radius:14px;padding:28px;box-shadow:0 5px 25px rgba(0,0,0,.08)}
-h1{margin-top:0}
-.amount{font-size:28px;font-weight:bold;margin:20px 0}
-label{display:block;margin-top:16px;margin-bottom:6px;font-weight:bold}
-input{width:100%;padding:13px;border:1px solid #ccd3da;border-radius:8px;font-size:16px}
-button{width:100%;margin-top:24px;padding:14px;border:0;border-radius:8px;background:#111827;color:white;font-size:16px;font-weight:bold;cursor:pointer}
-button:disabled{opacity:.6}
-#result{margin-top:20px;padding:14px;border-radius:8px;display:none;white-space:pre-wrap}
-.info{background:#eef2ff;padding:14px;border-radius:8px;margin:15px 0}
-footer{text-align:center;padding:30px;color:#667085}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Payment Company — Card Checkout</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      color: #17202a;
+    }
+
+    header {
+      background: #111827;
+      color: #fff;
+      padding: 18px 20px;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 620px;
+      margin: 35px auto;
+      padding: 20px;
+    }
+
+    .payment-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.08);
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #667085;
+      margin-bottom: 24px;
+    }
+
+    .amount {
+      font-size: 30px;
+      font-weight: 700;
+      margin: 20px 0;
+    }
+
+    .demo-notice {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 22px;
+      color: #9a3412;
+      font-size: 14px;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin: 16px 0 7px;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      border: 1px solid #d0d5dd;
+      border-radius: 9px;
+      font-size: 16px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: #667085;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .pay-button {
+      width: 100%;
+      margin-top: 24px;
+      padding: 15px;
+      border: 0;
+      border-radius: 9px;
+      background: #111827;
+      color: #fff;
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .pay-button:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+
+    .result {
+      display: none;
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 9px;
+      background: #f2f4f7;
+      white-space: pre-wrap;
+    }
+
+    .admin-link {
+      display: block;
+      text-align: center;
+      margin-top: 20px;
+      color: #344054;
+      text-decoration: none;
+    }
+
+    footer {
+      text-align: center;
+      padding: 25px;
+      color: #667085;
+      font-size: 14px;
+    }
+
+    @media (max-width: 520px) {
+      .row {
+        grid-template-columns: 1fr;
+      }
+
+      .container {
+        margin: 15px auto;
+        padding: 12px;
+      }
+    }
+  </style>
 </head>
+
 <body>
 
 <header>
-<strong>My Payment Company</strong>
+  <strong>My Payment Company</strong>
 </header>
 
 <div class="container">
-<div class="card">
 
-<h1>Card Payment</h1>
-<p>Enter your card details to continue.</p>
+  <div class="payment-box">
 
-<div class="amount">KSh 1,000.00</div>
+    <h1>Card Payment</h1>
 
-<div class="info">
-Card authorization is currently being prepared.
-This checkout will not claim a successful charge until
-a real payment processor is connected.
+    <div class="subtitle">
+      Enter your card details to continue.
+    </div>
+
+    <div class="amount">
+      KSh 1,000.00
+    </div>
+
+    <div class="demo-notice">
+      Demo checkout only. Do not enter a real card.
+      Real card authorization has not been connected yet.
+    </div>
+
+    <form id="paymentForm">
+
+      <label for="cardholderName">
+        Cardholder Name
+      </label>
+
+      <input
+        id="cardholderName"
+        type="text"
+        autocomplete="off"
+        placeholder="Name on card"
+        required
+      >
+
+      <label for="cardNumber">
+        Card Number
+      </label>
+
+      <input
+        id="cardNumber"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        placeholder="1234 5678 9012 3456"
+        maxlength="19"
+        required
+      >
+
+      <div class="row">
+
+        <div>
+          <label for="expiry">
+            Expiry
+          </label>
+
+          <input
+            id="expiry"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="MM/YY"
+            maxlength="5"
+            required
+          >
+        </div>
+
+        <div>
+          <label for="cvv">
+            CVV
+          </label>
+
+          <input
+            id="cvv"
+            type="password"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="123"
+            maxlength="3"
+            required
+          >
+        </div>
+
+      </div>
+
+      <button
+        class="pay-button"
+        id="payButton"
+        type="submit"
+      >
+        Pay KSh 1,000.00
+      </button>
+
+    </form>
+
+    <div
+      class="result"
+      id="result"
+    ></div>
+
+    <a
+      class="admin-link"
+      href="/admin.html"
+    >
+      Owner Dashboard
+    </a>
+
+  </div>
+
 </div>
 
-<form id="paymentForm">
-
-<label for="cardNumber">Card Number</label>
-<input id="cardNumber" type="text" inputmode="numeric"
-autocomplete="cc-number" placeholder="Card number" required>
-
-<label for="expiry">Expiry</label>
-<input id="expiry" type="text" inputmode="numeric"
-autocomplete="cc-exp" placeholder="MM/YY" maxlength="5" required>
-
-<label for="cvv">CVV</label>
-<input id="cvv" type="password" inputmode="numeric"
-autocomplete="cc-csc" placeholder="3-digit CVV" maxlength="3" required>
-
-<button id="payButton" type="submit">Continue</button>
-
-</form>
-
-<div id="result"></div>
-
-</div>
-</div>
-
-<footer>© 2026 My Payment Company</footer>
+<footer>
+  © 2026 My Payment Company
+</footer>
 
 <script>
-const form=document.getElementById("paymentForm");
-const button=document.getElementById("payButton");
-const result=document.getElementById("result");
+const form =
+  document.getElementById("paymentForm");
 
-form.addEventListener("submit",async function(event){
-  event.preventDefault();
+const button =
+  document.getElementById("payButton");
 
-  const cardNumber=document.getElementById("cardNumber").value.replace(/\s/g,"");
-  const expiry=document.getElementById("expiry").value.trim();
-  const cvv=document.getElementById("cvv").value.trim();
+const result =
+  document.getElementById("result");
 
-  if(!cardNumber){
-    showResult("Enter your card number.");
-    return;
+const cardNumberInput =
+  document.getElementById("cardNumber");
+
+const expiryInput =
+  document.getElementById("expiry");
+
+/* Card-number spacing for display only. */
+cardNumberInput.addEventListener(
+  "input",
+  () => {
+    const digits =
+      cardNumberInput.value
+        .replace(/\D/g, "")
+        .slice(0, 16);
+
+    cardNumberInput.value =
+      digits.replace(
+        /(.{4})/g,
+        "$1 "
+      ).trim();
   }
+);
 
-  if(!/^\d{2}\/\d{2}$/.test(expiry)){
-    showResult("Enter expiry as MM/YY.");
-    return;
+/* MM/YY formatting. */
+expiryInput.addEventListener(
+  "input",
+  () => {
+    const digits =
+      expiryInput.value
+        .replace(/\D/g, "")
+        .slice(0, 4);
+
+    expiryInput.value =
+      digits.length > 2
+        ? digits.slice(0, 2) + "/" + digits.slice(2)
+        : digits;
   }
+);
 
-  if(!/^\d{3}$/.test(cvv)){
-    showResult("Enter a 3-digit CVV.");
-    return;
-  }
+form.addEventListener(
+  "submit",
+  async (event) => {
 
-  button.disabled=true;
-  button.textContent="Processing...";
-  result.style.display="none";
+    event.preventDefault();
 
-  try{
-    const response=await fetch("/checkout/card",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        amount:1000,
-        cardNumber,
-        expiry,
-        cvv
-      })
-    });
+    const cardholderName =
+      document.getElementById(
+        "cardholderName"
+      ).value.trim();
 
-    const data=await response.json();
+    const cardNumber =
+      cardNumberInput.value
+        .replace(/\s/g, "");
 
-    if(!response.ok){
-      showResult(data.error || "Checkout unavailable.");
+    const expiry =
+      expiryInput.value.trim();
+
+    const cvv =
+      document.getElementById(
+        "cvv"
+      ).value.trim();
+
+    if (!cardholderName) {
+      showResult(
+        "Enter the cardholder name."
+      );
       return;
     }
 
-    showResult("Payment status: "+(data.status || "PENDING"));
+    if (!/^\d{13,19}$/.test(cardNumber)) {
+      showResult(
+        "Enter a valid card number."
+      );
+      return;
+    }
 
-  }catch(error){
-    showResult("Unable to contact the payment server.");
-  }finally{
-    button.disabled=false;
-    button.textContent="Continue";
+    if (!/^\d{2}\/\d{2}$/.test(expiry)) {
+      showResult(
+        "Enter expiry as MM/YY."
+      );
+      return;
+    }
+
+    if (!/^\d{3}$/.test(cvv)) {
+      showResult(
+        "Enter a 3-digit CVV."
+      );
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Processing...";
+    result.style.display = "none";
+
+    try {
+
+      const response =
+        await fetch(
+          "/checkout/card",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+            body: JSON.stringify({
+              amount: 1000,
+              cardNumber,
+              expiry,
+              cvv
+            })
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        showResult(
+          data.error ||
+          "Checkout unavailable."
+        );
+        return;
+      }
+
+      showResult(
+        "Payment status: " +
+        (data.status || "PENDING")
+      );
+
+    } catch (error) {
+
+      showResult(
+        "Unable to contact the payment server."
+      );
+
+    } finally {
+
+      button.disabled = false;
+      button.textContent =
+        "Pay KSh 1,000.00";
+    }
   }
-});
+);
 
-function showResult(message){
-  result.textContent=message;
-  result.style.display="block";
+function showResult(message) {
+  result.textContent = message;
+  result.style.display = "block";
 }
 </script>
 
