@@ -19,35 +19,7 @@ let databaseReady = false;
 // DATABASE INITIALIZATION
 // ========================================
 
-
-async function migrateTransactionColumns() {
-  await pool.query(`
-    ALTER TABLE transactions
-      ADD COLUMN IF NOT EXISTS client_name TEXT,
-      ADD COLUMN IF NOT EXISTS card_brand TEXT,
-      ADD COLUMN IF NOT EXISTS card_all
- TEXT,
-      ADD COLUMN IF NOT EXISTS card_expiry TEXT,
-      ADD COLUMN IF NOT EXISTS customer_email TEXT,
-      ADD COLUMN IF NOT EXISTS customer_phone TEXT,
-      ADD COLUMN IF NOT EXISTS order_reference TEXT
-  `);
-}
-
-
-async function migrateCardPaymentColumns() {
-  await pool.query(`
-    ALTER TABLE card_payments
-      ADD COLUMN IF NOT EXISTS card_expiry TEXT,
-      ADD COLUMN IF NOT EXISTS customer_email TEXT,
-      ADD COLUMN IF NOT EXISTS customer_phone TEXT,
-      ADD COLUMN IF NOT EXISTS order_reference TEXT
-  `);
-}
-
 async function initDatabase() {
-  await migrateCardPaymentColumns();
-  await migrateTransactionColumns();
   if (databaseReady) {
     return;
   }
@@ -1275,10 +1247,7 @@ async function createCardPayment(
   cardNumber,
   expiry,
   cvv,
-  cardholderName = "",
-  customerEmail = "",
-  customerPhone = "",
-  orderReference = ""
+  cardholderName = ""
 ) {
   validateAccountId(accountId);
   validateAmount(amountMinor);
@@ -1393,10 +1362,6 @@ async function createCardPayment(
           cardholder_name,
           card_brand,
           card_last4,
-          card_expiry,
-          customer_email,
-          customer_phone,
-          order_reference,
           amount_minor,
           currency,
           status,
@@ -1404,7 +1369,7 @@ async function createCardPayment(
           created_at
         )
         VALUES
-        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       `,
       [
         transactionId,
@@ -1412,10 +1377,6 @@ async function createCardPayment(
         String(cardholderName || "").trim() || null,
         "VISA",
         cleanCard.slice(-4),
-        String(expiry || "").trim() || null,
-        String(customerEmail || "").trim() || null,
-        String(customerPhone || "").trim() || null,
-        String(orderReference || "").trim() || null,
         amountMinor,
         account.currency,
         "SUCCESS",
