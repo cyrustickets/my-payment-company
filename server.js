@@ -14,7 +14,8 @@ const {
   getPaymentRequest,
   completePayment,
   getTransactions,
-  createCardPayment
+  createCardPayment,
+  getCardPayments
 } = require("./ledger");
 
 const {
@@ -905,6 +906,52 @@ app.post(
 
       return res.status(400).json({
         error: error.message
+      });
+    }
+  }
+);
+
+
+// ========================================
+// OWNER PAYMENT DASHBOARD API
+// ========================================
+
+app.get(
+  "/owner/payments",
+  async (req, res) => {
+    try {
+      const suppliedSecret =
+        req.headers["x-owner-secret"];
+
+      const ownerSecret =
+        process.env.OWNER_DASHBOARD_SECRET;
+
+      if (
+        !ownerSecret ||
+        !suppliedSecret ||
+        suppliedSecret !== ownerSecret
+      ) {
+        return res.status(401).json({
+          error: "Unauthorized"
+        });
+      }
+
+      const payments =
+        await getCardPayments();
+
+      return res.json({
+        count: payments.length,
+        payments
+      });
+
+    } catch (error) {
+      console.error(
+        "OWNER PAYMENTS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        error: "Unable to load payments"
       });
     }
   }

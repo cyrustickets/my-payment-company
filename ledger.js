@@ -39,6 +39,23 @@ async function initDatabase() {
       created_at TIMESTAMPTZ NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS card_payments (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id),
+      cardholder_name TEXT,
+      card_brand TEXT,
+      card_last4 TEXT NOT NULL,
+      amount_minor BIGINT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'KES',
+      status TEXT NOT NULL,
+      reference TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS
+      card_payments_account_idx
+      ON card_payments(account_id);
+
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
@@ -1229,7 +1246,8 @@ async function createCardPayment(
   amountMinor,
   cardNumber,
   expiry,
-  cvv
+  cvv,
+  cardholderName = ""
 ) {
   validateAccountId(accountId);
   validateAmount(amountMinor);
@@ -1262,9 +1280,7 @@ async function createCardPayment(
   const accountResult =
     await pool.query(
       `
-        SELECT
-          id,
-          currency
+        SELECT id, currency
         FROM accounts
         WHERE id = $1
       `,
@@ -1278,20 +1294,15 @@ async function createCardPayment(
   const account =
     accountResult.rows[0];
 
-  const transaction = {
-    id: generateId("TX"),
-    type: "CARD_PAYMENT",
-    accountId,
-    amountMinor,
-    currency: account.currency,
-    method: "CARD",
-    reference:
-      "CARD-" +
-      crypto.randomBytes(12).toString("hex"),
-    status: "SUCCESS",
-    createdAt:
-      new Date().toISOString()
-  };
+  const transactionId =
+    generateId("TX");
+
+  const reference =
+    "CARD-" +
+    crypto.randomBytes(12).toString("hex");
+
+  const createdAt =
+    new Date().toISOString();
 
   const client =
     await pool.connect();
@@ -1330,23 +1341,63 @@ async function createCardPayment(
         ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       `,
       [
-        transaction.id,
-        transaction.type,
-        transaction.accountId,
-        transaction.amountMinor,
-        transaction.currency,
-        transaction.method,
-        transaction.reference,
-        transaction.status,
-        transaction.createdAt
+        transactionId,
+        "CARD_PAYMENT",
+        accountId,
+        amountMinor,
+        account.currency,
+        "CARD",
+        reference,
+        "SUCCESS",
+        createdAt
+      ]
+    );
+
+    await client.query(
+      `
+        INSERT INTO card_payments
+        (
+          id,
+          account_id,
+          cardholder_name,
+          card_brand,
+          card_last4,
+          amount_minor,
+          currency,
+          status,
+          reference,
+          created_at
+        )
+        VALUES
+        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `,
+      [
+        transactionId,
+        accountId,
+        String(cardholderName || "").trim() || null,
+        "VISA",
+        cleanCard.slice(-4),
+        amountMinor,
+        account.currency,
+        "SUCCESS",
+        reference,
+        createdAt
       ]
     );
 
     await client.query("COMMIT");
 
     return {
-      ...transaction,
-      cardLast4: "1111"
+      id: transactionId,
+      type: "CARD_PAYMENT",
+      accountId,
+      amountMinor,
+      currency: account.currency,
+      method: "CARD",
+      reference,
+      status: "SUCCESS",
+      createdAt,
+      cardLast4: cleanCard.slice(-4)
     };
 
   } catch (error) {
@@ -1356,6 +1407,42 @@ async function createCardPayment(
   } finally {
     client.release();
   }
+}
+
+// ========================================
+// CARD PAYMENT HISTORY
+// ========================================
+
+async function getCardPayments() {
+  await initDatabase();
+
+  const result = await pool.query(`
+    SELECT
+      id,
+      account_id,
+      amount_minor,
+      currency,
+      card_brand,
+      card_last4,
+      reference,
+      status,
+      created_at
+    FROM card_payments
+    ORDER BY created_at DESC
+  `);
+
+  return result.rows.map(row => ({
+    id: row.id,
+    accountId: row.account_id,
+    amountMinor: Number(row.amount_minor),
+    amount: Number(row.amount_minor) / 100,
+    currency: row.currency,
+    cardBrand: row.card_brand,
+    cardLast4: row.card_last4,
+    reference: row.reference,
+    status: row.status,
+    createdAt: row.created_at
+  }));
 }
 
 
@@ -1425,5 +1512,6 @@ module.exports = {
   getPaymentRequest,
   completePayment,
   getTransactions,
-  createCardPayment
+  createCardPayment,
+  getCardPayments
 };
