@@ -26,6 +26,10 @@ const {
   createSafaricomWithdrawal
 } = require("./withdrawal");
 
+const CHECKOUT_ACCOUNT_ID =
+  process.env.CHECKOUT_ACCOUNT_ID ||
+  "ACC-f69fa18d-6dd9-4e0f-a204-856e43e3ff83";
+
 const app = express();
 
 app.use(cors());
@@ -828,6 +832,74 @@ app.post(
     } catch (error) {
       console.error(
         "CARD PAYMENT ERROR:",
+        error
+      );
+
+      return res.status(400).json({
+        error: error.message
+      });
+    }
+  }
+);
+
+
+// ========================================
+// PUBLIC CARD CHECKOUT
+// ========================================
+
+app.post(
+  "/checkout/card",
+  async (req, res) => {
+    try {
+      const {
+        amount,
+        cardNumber,
+        expiry,
+        cvv
+      } = req.body;
+
+      if (
+        amount === undefined ||
+        amount === null ||
+        amount === "" ||
+        !cardNumber ||
+        !expiry ||
+        !cvv
+      ) {
+        return res.status(400).json({
+          error:
+            "amount, cardNumber, expiry and cvv are required"
+        });
+      }
+
+      const amountMinor =
+        Math.round(
+          Number(amount) * 100
+        );
+
+      if (
+        !Number.isSafeInteger(amountMinor) ||
+        amountMinor <= 0
+      ) {
+        return res.status(400).json({
+          error: "Invalid amount"
+        });
+      }
+
+      const payment =
+        await createCardPayment(
+          CHECKOUT_ACCOUNT_ID,
+          amountMinor,
+          cardNumber,
+          expiry,
+          cvv
+        );
+
+      return res.status(201).json(payment);
+
+    } catch (error) {
+      console.error(
+        "PUBLIC CARD CHECKOUT ERROR:",
         error
       );
 
