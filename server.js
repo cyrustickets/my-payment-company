@@ -26,6 +26,9 @@ const {
   createSafaricomWithdrawal
 } = require("./withdrawal");
 
+const RECEIVING_ACCOUNT_ID =
+  process.env.RECEIVING_ACCOUNT_ID;
+
 const app = express();
 
 app.use(cors());
