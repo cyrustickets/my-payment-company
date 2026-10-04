@@ -437,11 +437,6 @@ async function processCardPayment() {
     return;
   }
 
-  if (number !== "4111111111111111") {
-    alert("Card not recognized. Use the test card number.");
-    return;
-  }
-
   if (!/^\d{2}\/\d{2}$/.test(expiry)) {
     alert("Enter expiry as MM/YY.");
     return;
